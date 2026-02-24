@@ -1,0 +1,17 @@
+django~=4.2.20
+dotenv~=0.9.9
+djangorestframework~=3.16.0
+djangorestframework-simplejwt~=5.5.0
+twilio
+mysqlclient
+django-cors-headers
+Pillow
+django-filter
+itsdangerous
+reportlab
+django-ckeditor
+django-redis
+
+--index-url https://phonepe.mycloudrepo.io/public/repositories/phonepe-pg-sdk-python
+--extra-index-url https://pypi.org/simple
+phonepe_sdk

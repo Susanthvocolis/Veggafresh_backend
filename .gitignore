@@ -1,0 +1,4 @@
+/svv_store/users/migrations/*
+/env-ssv/
+/svv_store/.env
+.env
