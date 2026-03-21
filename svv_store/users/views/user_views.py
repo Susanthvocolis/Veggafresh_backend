@@ -18,17 +18,14 @@ class RequestOTPView(APIView):
 
         identifier = serializer.validated_data['identifier']
         identifier_type = serializer.validated_data['identifier_type']
-        email = identifier.strip().lower()
+        
         # Normalize email
         if identifier_type == 'email':
-            identifier = identifier.lower()
-            user = User.objects.get(email__iexact=email)
-            if not user:
-                user = User.objects.create(email=identifier)
+            identifier = identifier.strip().lower()
+            user, created = User.objects.get_or_create(email=identifier)
         else:  # mobile
-            user = User.objects.get(mobile=identifier)
-            if not user:
-                user = User.objects.create(mobile=identifier)
+            identifier = identifier.strip()
+            user, created = User.objects.get_or_create(mobile=identifier)
 
         # Create OTP
         otp = create_or_update_otp(identifier, identifier_type, user)
