@@ -2,3 +2,5 @@
 /env-ssv/
 /svv_store/.env
 .env
+__pycache__/
+*.pyc
