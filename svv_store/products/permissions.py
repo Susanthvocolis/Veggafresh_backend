@@ -23,6 +23,11 @@ class IsSuperAdminOrHasProductPermission(BasePermission):
                 return perms.can_delete_product
             elif action in ['list', 'retrieve']:
                 return True  # allow read by default
+        if user.role == user.Role.USER:
+            if view.action in ['list', 'retrieve']:
+                return True
+            return False
+
 
         return False
 
