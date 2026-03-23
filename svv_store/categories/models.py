@@ -1,31 +1,14 @@
-import time
-
-from django.core.files.base import ContentFile
 from django.db import models
 from django.utils.text import slugify
 
 from users.models import User
 
-def category_image_upload_path(instance, filename):
-    ext = filename.split('.')[-1]
-    timestamp = int(time.time())
-    unique_filename = f"{instance.slug}-{timestamp}.{ext}"
-    if instance.pk:
-        return f"categories/{instance.pk}/{unique_filename}"
-    return f"categories/temp/{unique_filename}"
 
-def subcategory_image_upload_path(instance, filename):
-    ext = filename.split('.')[-1]
-    timestamp = int(time.time())
-    unique_filename = f"{instance.slug}-{timestamp}.{ext}"
-    if instance.pk:
-        return f"subcategories/{instance.pk}/{unique_filename}"
-    return f"subcategories/temp/{unique_filename}"
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True, blank=True)
     is_active = models.BooleanField(default=True)
-    image = models.ImageField(upload_to=category_image_upload_path, null=True, blank=True)
+    image = models.TextField(null=True, blank=True)
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -45,35 +28,18 @@ class Category(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         user = kwargs.pop('user', None)
-        original_image = self.image if is_new else None  # Only move image for new records
-        # Slug logic
         if is_new:
             self.slug = slugify(self.name)
         else:
             orig = Category.objects.get(pk=self.pk)
             if orig.name != self.name:
                 self.slug = slugify(self.name)
-        # Audit fields
         if is_new and user:
             self.created_by = user
-        if user:  # On any update
+        if user:
             self.updated_by = user
-
         super().save(*args, **kwargs)
 
-        # Handle image renaming after save (only for new records)
-        if is_new and original_image:
-            ext = original_image.name.split('.')[-1]
-            timestamp = int(time.time())
-            new_path = f"categories/{self.pk}/{timestamp}.{ext}"
-
-            # Move file pointer back to the beginning
-            original_image.open()
-            file_data = original_image.read()
-            original_image.close()
-
-            self.image.save(new_path, ContentFile(file_data), save=False)
-            super().save(update_fields=["image"])
     def __str__(self):
         return self.name
 
@@ -84,7 +50,7 @@ class SubCategory(models.Model):
     name = models.CharField(max_length=100)
     slug = models.SlugField(blank=True)
     is_active = models.BooleanField(default=True)
-    image = models.ImageField(upload_to=subcategory_image_upload_path, null=True, blank=True)
+    image = models.TextField(null=True, blank=True)
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -104,35 +70,17 @@ class SubCategory(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         user = kwargs.pop('user', None)
-        original_image = self.image if is_new else None  # Only move image for new records
-        # Slug logic
         if is_new:
             self.slug = slugify(self.name)
         else:
             orig = SubCategory.objects.get(pk=self.pk)
             if orig.name != self.name:
                 self.slug = slugify(self.name)
-        # Audit fields
         if is_new and user:
             self.created_by = user
         if user:
             self.updated_by = user
-
         super().save(*args, **kwargs)
-
-        # Handle image renaming after save (only for new records)
-        if is_new and original_image:
-            ext = original_image.name.split('.')[-1]
-            timestamp = int(time.time())
-            new_path = f"subcategories/{self.pk}/{timestamp}.{ext}"
-
-            # Move file pointer back to the beginning
-            original_image.open()
-            file_data = original_image.read()
-            original_image.close()
-
-            self.image.save(new_path, ContentFile(file_data), save=False)
-            super().save(update_fields=["image"])
 
     def __str__(self):
         return f"{self.category.name} - {self.name}"

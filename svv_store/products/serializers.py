@@ -1,15 +1,31 @@
-from rest_framework import serializers
-
-from utils.signed_url import generate_signed_token
-from .models import Product, ProductVariant, ProductImage
-from django.utils import timezone
-from django.conf import settings
-from urllib.parse import urlencode
-import hashlib
-import hmac
 import base64
 
-from django.urls import reverse
+from rest_framework import serializers
+
+from .models import Product, ProductVariant, ProductImage
+
+
+class Base64ImageField(serializers.Field):
+    """
+    Accepts a file upload (multipart) on write — converts it to a base64 data URI.
+    Returns the stored base64 string as-is on read.
+    """
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            # Already a base64 string (e.g. sent back unchanged by FE)
+            return data
+        try:
+            content = data.read()
+            mime_type = getattr(data, 'content_type', None) or 'image/jpeg'
+            encoded = base64.b64encode(content).decode('utf-8')
+            return f"data:{mime_type};base64,{encoded}"
+        except Exception:
+            raise serializers.ValidationError("Invalid image file.")
+
+    def to_representation(self, value):
+        return value
+
 
 class ProductVariantSerializer(serializers.ModelSerializer):
     class Meta:
@@ -21,19 +37,11 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
-    secure_url = serializers.SerializerMethodField()
+    image = Base64ImageField(required=False, allow_null=True)
 
     class Meta:
         model = ProductImage
-        fields = ['id', 'alt_text', 'secure_url']
-
-    def get_secure_url(self, obj):
-        if not obj.image:
-            return None
-        token = generate_signed_token(obj.image.name)
-        return self.context['request'].build_absolute_uri(
-            reverse('secure-media', kwargs={'token': token})
-        )
+        fields = ['id', 'alt_text', 'image']
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -41,13 +49,14 @@ class ProductSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, required=False)
     category_name = serializers.SerializerMethodField()
     subcategory_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug', 'description', 'category', 'subcategory', 'brand',
-            'is_active', 'variants', 'images','category_name', 'subcategory_name'
+            'is_active', 'variants', 'images', 'category_name', 'subcategory_name'
         ]
-        read_only_fields = ['slug','category_name', 'subcategory_name']
+        read_only_fields = ['slug', 'category_name', 'subcategory_name']
         extra_kwargs = {
             'description': {'required': False, 'allow_blank': True},
             'brand': {'required': False, 'allow_blank': True},
@@ -59,13 +68,13 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_subcategory_name(self, obj):
         return obj.subcategory.name if obj.subcategory else None
+
     def create(self, validated_data):
         variants_data = validated_data.pop('variants', [])
         images_data = validated_data.pop('images', [])
         request = self.context.get('request')
         user = request.user if request else None
 
-        # Set default values for optional fields
         if 'is_active' not in validated_data:
             validated_data['is_active'] = True
         if 'description' not in validated_data:
@@ -76,10 +85,8 @@ class ProductSerializer(serializers.ModelSerializer):
         product = Product.objects.create(**validated_data, created_by=user, updated_by=user)
 
         for variant in variants_data:
-            # Handle empty discounted_price
             if 'discounted_price' not in variant or variant['discounted_price'] == '':
                 variant['discounted_price'] = None
-
             ProductVariant.objects.create(product=product, **variant)
 
         for image in images_data:
@@ -95,26 +102,19 @@ class ProductSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         user = request.user if request else None
 
-        # Update basic product fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
-        # Update updated_by field
         instance.updated_by = user
         instance.save()
 
-        # Update variants if provided
         if variants_data is not None:
-            # Remove existing variants
             instance.variants.all().delete()
-
-            # Create new variants
             for variant in variants_data:
                 if 'discounted_price' not in variant or variant['discounted_price'] == '':
                     variant['discounted_price'] = None
                 ProductVariant.objects.create(product=instance, **variant)
 
-        # Add new images if provided
         if images_data:
             for image in images_data:
                 if 'alt_text' not in image:
@@ -127,6 +127,7 @@ class ProductSerializer(serializers.ModelSerializer):
                 )
 
         return instance
+
 
 class UserProductSerializer(serializers.ModelSerializer):
     variants = ProductVariantSerializer(many=True)

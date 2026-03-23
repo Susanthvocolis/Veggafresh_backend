@@ -2,12 +2,13 @@ from rest_framework import serializers
 
 from payments.models import Payment
 from .models import Order, OrderItem, OrderStatus, DeliveryPerson
-from products.models import ProductVariant
+
 
 class OrderItemCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = ['product_variant', 'quantity']
+
 
 class OrderCreateSerializer(serializers.ModelSerializer):
     items = OrderItemCreateSerializer(many=True)
@@ -31,10 +32,17 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
 class OrderItemSerializer(serializers.ModelSerializer):
     product_variant = serializers.StringRelatedField()
+    product_name = serializers.CharField(source='product_variant.product.name', read_only=True)
+    product_image = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
-        fields = ['id', 'product_variant', 'quantity']
+        fields = ['id', 'product_variant', 'product_name', 'product_image', 'quantity']
+
+    def get_product_image(self, obj):
+        image = obj.product_variant.product.images.first()
+        return image.image if image else None
+
 
 class DeliveryPersonSerializer(serializers.ModelSerializer):
     class Meta:
@@ -81,6 +89,7 @@ class OrderStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = ['status', 'tracking_link', 'delivery_person']
+
 
 class OrderStatusSerializer(serializers.ModelSerializer):
     class Meta:
