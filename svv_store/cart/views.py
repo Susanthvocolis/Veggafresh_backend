@@ -27,7 +27,7 @@ class CartViewSet(viewsets.ViewSet):
         cart, _ = Cart.objects.get_or_create(user=request.user)
         item, created = CartItem.objects.get_or_create(cart=cart, product_variant=product_variant)
         if not created:
-            item.quantity += quantity
+            item.quantity = quantity
         else:
             item.quantity = quantity
         item.save()
