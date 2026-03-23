@@ -28,9 +28,11 @@ class Base64ImageField(serializers.Field):
 
 
 class ProductVariantSerializer(serializers.ModelSerializer):
+    product_variant_id = serializers.IntegerField(source='id', read_only=True)
+
     class Meta:
         model = ProductVariant
-        fields = ['quantity', 'unit', 'price', 'discounted_price', 'stock', 'is_available']
+        fields = ['product_variant_id', 'quantity', 'unit', 'price', 'discounted_price', 'stock', 'is_available']
         extra_kwargs = {
             'discounted_price': {'required': False},
         }
