@@ -173,14 +173,26 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # OTP Configuration
 OTP_EXPIRY_MINUTES = 5
 OTP_LENGTH = 6
+# Comma-separated mobile numbers that bypass OTP (any OTP accepted, no SMS sent)
+OTP_BYPASS_MOBILES = [
+    m.strip() for m in os.getenv("OTP_BYPASS_MOBILES", "9999900000").split(",") if m.strip()
+]
 
-# SMS Service Configuration (Example using http://tra.bulksmshyderabad.co.in/)
-SMS_API_URL = os.getenv("SMS_API_URL","")
-SMS_USERNAME = os.getenv("SMS_USERNAME","")
-SMS_PASSWORD = os.getenv("SMS_PASSWORD")
-SMS_SENDER_ID = os.getenv("SMS_SENDER_ID","")
-SMS_PEID = os.getenv("SMS_PEID","")
-SMS_OTP_TPID = os.getenv("SMS_OTP_TPID","")
+# SMS Service Configuration (connectbind.com)
+SMS_API_URL = os.getenv("SMS_API_URL", "https://dstri.connectbind.com:8443/sendsms/bulksms")
+SMS_USERNAME = os.getenv("SMS_USERNAME", "")
+SMS_PASSWORD = os.getenv("SMS_PASSWORD", "")
+SMS_SENDER_ID = os.getenv("SMS_SENDER_ID", "")
+SMS_TMID = os.getenv("SMS_TMID", "")
+# OTP SMS
+SMS_OTP_ENTITYID = os.getenv("SMS_OTP_ENTITYID", "")
+SMS_OTP_TPID = os.getenv("SMS_OTP_TPID", "")
+# Order Placed SMS
+SMS_ORDER_ENTITYID = os.getenv("SMS_ORDER_ENTITYID", "")
+SMS_ORDER_TPID = os.getenv("SMS_ORDER_TPID", "")
+# Out for Delivery SMS
+SMS_DELIVERY_ENTITYID = os.getenv("SMS_DELIVERY_ENTITYID", "")
+SMS_DELIVERY_TPID = os.getenv("SMS_DELIVERY_TPID", "")
 
 
 # Email Configuration
