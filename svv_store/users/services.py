@@ -30,6 +30,26 @@ def generate_unique_otp(identifier):
     raise Exception("Unable to generate unique OTP")
 
 
+def _send_sms(params):
+    """
+    Send SMS via connectbind API.
+    Builds URL manually to prevent urllib from percent-encoding the comma in
+    tmid (e.g. '123,456' must stay literal, not become '123%2C456'), which
+    causes PE_TM_HASH_NOT_REGISTERED on the DLT system.
+    """
+    import urllib.parse
+    tmid = params.pop('tmid')
+    query = urllib.parse.urlencode(params)
+    url = f"{SMS_API_URL}?{query}&tmid={tmid}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.text.strip() or None
+    except requests.RequestException as e:
+        print(f"SMS sending failed: {e}")
+        return None
+
+
 def _format_destination(mobile):
     """Ensure mobile number has 91 country code prefix."""
     mobile = str(mobile).strip()
@@ -63,13 +83,7 @@ def send_sms_notification(identifier, otp, user):
         'tmid': SMS_TMID,
     }
 
-    try:
-        response = requests.get(SMS_API_URL, params=params, timeout=10)
-        response.raise_for_status()
-        return response.text.strip() or None
-    except requests.RequestException as e:
-        print(f"SMS sending failed: {e}")
-        return None
+    return _send_sms(params)
 
 
 def send_order_placed_sms(mobile, user_name, order_id, total_amount):
@@ -95,13 +109,7 @@ def send_order_placed_sms(mobile, user_name, order_id, total_amount):
         'tmid': SMS_TMID,
     }
 
-    try:
-        response = requests.get(SMS_API_URL, params=params, timeout=10)
-        response.raise_for_status()
-        return response.text.strip() or None
-    except requests.RequestException as e:
-        print(f"Order placed SMS sending failed: {e}")
-        return None
+    return _send_sms(params)
 
 
 def send_out_for_delivery_sms(mobile, user_name, order_id):
@@ -126,18 +134,13 @@ def send_out_for_delivery_sms(mobile, user_name, order_id):
         'tmid': SMS_TMID,
     }
 
-    try:
-        response = requests.get(SMS_API_URL, params=params, timeout=10)
-        response.raise_for_status()
-        return response.text.strip() or None
-    except requests.RequestException as e:
-        print(f"Out for delivery SMS sending failed: {e}")
-        return None
+    return _send_sms(params)
 
 
 def send_email_otp(email, otp, user):
     """
-    Send OTP via email with improved error handling
+    Send OTP via email with clear error handling.
+    Returns True on success, raises on failure.
     """
     user_name = user.first_name if user and user.first_name else "User"
 
@@ -146,12 +149,6 @@ def send_email_otp(email, otp, user):
     plain_message = EMAIL_OTP_TEMPLATE['text_body'].format(user_name=user_name, otp=otp)
 
     try:
-        # Test SMTP connection first
-        with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
-            server.starttls()
-            server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
-
-        # If connection test passes, send the email
         send_mail(
             subject=subject,
             message=plain_message,
@@ -161,31 +158,61 @@ def send_email_otp(email, otp, user):
             fail_silently=False
         )
         return True
+
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"SMTP authentication failed — check EMAIL_HOST_USER/PASSWORD: {e}")
+        raise
+
+    except smtplib.SMTPConnectError as e:
+        print(f"SMTP connection failed — check EMAIL_HOST/PORT: {e}")
+        raise
+
+    except smtplib.SMTPRecipientsRefused as e:
+        print(f"Recipient address rejected by server ({email}): {e}")
+        raise
+
     except smtplib.SMTPException as e:
-        print(f"SMTP Error sending email: {e}")
-        raise e
+        print(f"SMTP error while sending email: {e}")
+        raise
 
     except Exception as e:
-        print(f"Unexpected error sending email: {e}")
-        raise e
-    return False
+        print(f"Unexpected error sending email to {email}: {e}")
+        raise
 
 
 def create_or_update_otp(identifier, identifier_type, user):
-    """Create or update OTP for a given identifier (email or mobile)"""
+    """
+    Create or update OTP for a given identifier (email or mobile).
+    Only saves to DB if sending succeeds.
+    """
     otp = generate_unique_otp(identifier)
 
-    # Mark old OTPs as used
+    try:
+        # Send OTP first — before touching the DB
+        if identifier_type == 'mobile':
+            message_id = send_sms_notification(identifier, otp, user)
+        else:  # email
+            send_email_otp(identifier, otp, user)
+            message_id = "email_sent"
+
+    except smtplib.SMTPAuthenticationError:
+        raise ValueError("Email service authentication failed. Please contact support.")
+
+    except smtplib.SMTPConnectError:
+        raise ValueError("Unable to reach email server. Please try again later.")
+
+    except smtplib.SMTPRecipientsRefused:
+        raise ValueError(f"The email address '{identifier}' was rejected. Please check and try again.")
+
+    except smtplib.SMTPException as e:
+        raise ValueError(f"Failed to send OTP email: {e}")
+
+    except Exception as e:
+        raise ValueError(f"Failed to send OTP: {e}")
+
+    # Only reach here if sending succeeded — now safe to update DB
     OTP.objects.filter(identifier=identifier, is_used=False).update(is_used=True)
 
-    # Send OTP based on type
-    if identifier_type == 'mobile':
-        message_id = send_sms_notification(identifier, otp, user)
-    else:  # email
-        success = send_email_otp(identifier, otp, user)
-        message_id = "email_sent" if success else None
-
-    # Save OTP object
     otp_obj = OTP.objects.create(
         identifier=identifier,
         identifier_type=identifier_type,
