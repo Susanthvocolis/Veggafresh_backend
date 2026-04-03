@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,7 +19,7 @@ class RequestOTPView(APIView):
 
         identifier = serializer.validated_data['identifier']
         identifier_type = serializer.validated_data['identifier_type']
-        
+
         # Normalize email
         if identifier_type == 'email':
             identifier = identifier.strip().lower()
@@ -27,7 +28,14 @@ class RequestOTPView(APIView):
             identifier = identifier.strip()
             user, created = User.objects.get_or_create(mobile=identifier)
 
-        # Create OTP
+        # Bypass OTP for test numbers — skip SMS and OTP creation
+        if identifier_type == 'mobile' and identifier in settings.OTP_BYPASS_MOBILES:
+            return Response({
+                'message': f'OTP sent to {identifier_type} successfully',
+                'identifier': identifier
+            })
+
+        # Create and send OTP
         otp = create_or_update_otp(identifier, identifier_type, user)
 
         return Response({
@@ -48,21 +56,37 @@ class VerifyOTPView(APIView):
 
         if identifier_type == 'email':
             identifier = identifier.lower()
-            lookup = {
-                'otp': otp,
-                'identifier__iexact': identifier,
-                'is_used': False,
-                'identifier_type': identifier_type
-            }
-        else:
-            lookup = {
-                'otp': otp,
-                'identifier': identifier,
-                'is_used': False,
-                'identifier_type': identifier_type
-            }
 
         try:
+            # Bypass OTP validation for test numbers — accept any OTP
+            if identifier_type == 'mobile' and identifier in settings.OTP_BYPASS_MOBILES:
+                user, _ = User.objects.get_or_create(mobile=identifier)
+                if not user.is_mobile_verified:
+                    user.is_mobile_verified = True
+                    user.save()
+                refresh = RefreshToken.for_user(user)
+                return Response({
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                    'is_verified': True,
+                    'profile_complete': user.profile_complete
+                })
+
+            if identifier_type == 'email':
+                lookup = {
+                    'otp': otp,
+                    'identifier__iexact': identifier,
+                    'is_used': False,
+                    'identifier_type': identifier_type
+                }
+            else:
+                lookup = {
+                    'otp': otp,
+                    'identifier': identifier,
+                    'is_used': False,
+                    'identifier_type': identifier_type
+                }
+
             otp_obj = OTP.objects.get(**lookup)
 
             if not otp_obj.is_valid():

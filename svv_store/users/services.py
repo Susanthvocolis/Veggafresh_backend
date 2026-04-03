@@ -3,7 +3,12 @@ import smtplib
 from django.utils import timezone
 
 from svv_store import settings
-from svv_store.settings import SMS_API_URL, SMS_USERNAME, SMS_PASSWORD, SMS_SENDER_ID, SMS_PEID, SMS_OTP_TPID
+from svv_store.settings import (
+    SMS_API_URL, SMS_USERNAME, SMS_PASSWORD, SMS_SENDER_ID, SMS_TMID,
+    SMS_OTP_ENTITYID, SMS_OTP_TPID,
+    SMS_ORDER_ENTITYID, SMS_ORDER_TPID,
+    SMS_DELIVERY_ENTITYID, SMS_DELIVERY_TPID,
+)
 from utils.template_utils import EMAIL_OTP_TEMPLATE
 from .models import OTP
 import requests
@@ -25,31 +30,108 @@ def generate_unique_otp(identifier):
     raise Exception("Unable to generate unique OTP")
 
 
+def _format_destination(mobile):
+    """Ensure mobile number has 91 country code prefix."""
+    mobile = str(mobile).strip()
+    if mobile.startswith('+'):
+        mobile = mobile[1:]
+    if not mobile.startswith('91'):
+        mobile = '91' + mobile
+    return mobile
+
 
 def send_sms_notification(identifier, otp, user):
     """
     Send OTP SMS and return message ID
     """
-    user_name = user.first_name if user and user.first_name else "User"
-    message = f"Hi {user_name}, Your Shadow App account OTP is: {otp}. Thanks, Team Shadow INTECH"
-
-    final_url = (
-        f"{SMS_API_URL}"
-        f"?userid={SMS_USERNAME}&password={SMS_PASSWORD}&sender={SMS_SENDER_ID}"
-        f"&mobileno={identifier}&msg={message}"  # Changed mobile to identifier
-        f"&peid={SMS_PEID}&tpid={SMS_OTP_TPID}"
+    message = (
+        f"Your Vegga Fresh OTP is {otp} for login. "
+        f"Do not share this code with anyone. "
+        f"This OTP is valid for 5 minutes. -Vegga Fresh"
     )
 
-    try:
-        response = requests.get(final_url, timeout=10)
-        response.raise_for_status()
+    params = {
+        'username': SMS_USERNAME,
+        'password': SMS_PASSWORD,
+        'type': '0',
+        'dlr': '1',
+        'destination': _format_destination(identifier),
+        'source': SMS_SENDER_ID,
+        'message': message,
+        'entityid': SMS_OTP_ENTITYID,
+        'tempid': SMS_OTP_TPID,
+        'tmid': SMS_TMID,
+    }
 
-        if response.text.startswith("Success"):
-            message_id = response.text.split(":")[-1].strip()
-            return message_id
-        return None
+    try:
+        response = requests.get(SMS_API_URL, params=params, timeout=10)
+        response.raise_for_status()
+        return response.text.strip() or None
     except requests.RequestException as e:
         print(f"SMS sending failed: {e}")
+        return None
+
+
+def send_order_placed_sms(mobile, user_name, order_id, total_amount):
+    """
+    Send Order Placed confirmation SMS
+    """
+    message = (
+        f"Hi {user_name}, your order {order_id} has been successfully placed on Vegga Fresh. "
+        f"Total Amount: {total_amount:.2f} "
+        f"We will notify you once it's out for delivery. -Vegga Fresh"
+    )
+
+    params = {
+        'username': SMS_USERNAME,
+        'password': SMS_PASSWORD,
+        'type': '0',
+        'dlr': '1',
+        'destination': _format_destination(mobile),
+        'source': SMS_SENDER_ID,
+        'message': message,
+        'entityid': SMS_ORDER_ENTITYID,
+        'tempid': SMS_ORDER_TPID,
+        'tmid': SMS_TMID,
+    }
+
+    try:
+        response = requests.get(SMS_API_URL, params=params, timeout=10)
+        response.raise_for_status()
+        return response.text.strip() or None
+    except requests.RequestException as e:
+        print(f"Order placed SMS sending failed: {e}")
+        return None
+
+
+def send_out_for_delivery_sms(mobile, user_name, order_id):
+    """
+    Send Out for Delivery SMS
+    """
+    message = (
+        f"Hi {user_name}, your Vegga Fresh order {order_id} is out for delivery. "
+        f"It will reach you shortly. Please keep cash ready if COD. -Vegga Fresh"
+    )
+
+    params = {
+        'username': SMS_USERNAME,
+        'password': SMS_PASSWORD,
+        'type': '0',
+        'dlr': '1',
+        'destination': _format_destination(mobile),
+        'source': SMS_SENDER_ID,
+        'message': message,
+        'entityid': SMS_DELIVERY_ENTITYID,
+        'tempid': SMS_DELIVERY_TPID,
+        'tmid': SMS_TMID,
+    }
+
+    try:
+        response = requests.get(SMS_API_URL, params=params, timeout=10)
+        response.raise_for_status()
+        return response.text.strip() or None
+    except requests.RequestException as e:
+        print(f"Out for delivery SMS sending failed: {e}")
         return None
 
 

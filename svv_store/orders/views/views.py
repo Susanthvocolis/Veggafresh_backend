@@ -9,6 +9,7 @@ from orders.models import Order, OrderStatus, DeliveryPerson
 from orders.permissions import IsSuperAdminOrHasOrderPermission
 from orders.serializers import OrderSerializer, OrderStatusUpdateSerializer, OrderStatusSerializer, \
     DeliveryPersonSerializer
+from users.services import send_order_placed_sms, send_out_for_delivery_sms
 
 class AdminFilterOrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all().select_related('status', 'user', 'delivery_person').order_by('-created_at')
@@ -92,14 +93,28 @@ class AdminOrderViewSet(viewsets.ViewSet):
         serializer = OrderStatusUpdateSerializer(order, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            order.refresh_from_db()
 
             msg_map = {
                 "Accepted": "Order has been accepted.",
                 "Cancelled": "Order has been cancelled. Sorry for the inconvenience.",
                 "Assign to Delivery Partner": "Order assigned to delivery partner.",
+                "Out For Delivery": "Order is out for delivery.",
                 "Delivery Status Update": "Thank you! Order has been marked as delivered."
             }
             message = msg_map.get(order.status.name, "Order updated.")
+
+            if order.status.name == "Out For Delivery":
+                user = order.user
+                if user and user.mobile:
+                    try:
+                        send_out_for_delivery_sms(
+                            mobile=user.mobile,
+                            user_name=user.first_name or "Customer",
+                            order_id=order.order_id,
+                        )
+                    except Exception as e:
+                        print(f"Out for delivery SMS failed: {e}")
 
             return Response({
                 "message": message,
@@ -125,7 +140,18 @@ class UserOrderViewSet(viewsets.ModelViewSet):
         return Order.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        order = serializer.save(user=self.request.user)
+        user = self.request.user
+        if user.mobile:
+            try:
+                send_order_placed_sms(
+                    mobile=user.mobile,
+                    user_name=user.first_name or "Customer",
+                    order_id=order.order_id,
+                    total_amount=order.final_amount,
+                )
+            except Exception as e:
+                print(f"Order placed SMS failed: {e}")
 
 class OrderStatusViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OrderStatus.objects.all()
