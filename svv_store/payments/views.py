@@ -1,6 +1,7 @@
 from django.urls import reverse
 from phonepe.sdk.pg.payments.v2.models.request.standard_checkout_pay_request import StandardCheckoutPayRequest
 from rest_framework import filters
+from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from decimal import Decimal
 from cart.models import Cart
@@ -17,6 +18,7 @@ from .models import Payment
 from orders.models import Order, OrderStatus, OrderItem
 from phonepe.sdk.pg.payments.v2.standard_checkout_client import StandardCheckoutClient
 from phonepe.sdk.pg.env import Env
+from users.services import send_order_placed_sms
 
 class InitiatePhonePePayment(APIView):
     def post(self, request):
@@ -128,6 +130,98 @@ class PhonePeCallbackView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+class CodOrderCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        try:
+            cart = Cart.objects.get(user=user)
+        except Cart.DoesNotExist:
+            return Response({"error": "Cart does not exist."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not cart.items.exists():
+            return Response({"error": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create order
+        pending_status, _ = OrderStatus.objects.get_or_create(name="Pending")
+        order = Order.objects.create(user=user, status=pending_status, payment_method='cod')
+
+        for item in cart.items.all():
+            OrderItem.objects.create(
+                order=order,
+                product_variant=item.product_variant,
+                quantity=item.quantity
+            )
+
+        total_amount = order.final_amount
+
+        # Create Payment record for COD
+        payment = Payment.objects.create(
+            order=order,
+            user=user,
+            payment_id=f"COD-{order.order_id}",
+            amount=total_amount,
+            status='Pending'
+        )
+
+        # Clear cart
+        cart.items.all().delete()
+        cart.calculate_totals()
+
+        # Send SMS
+        if user.mobile:
+            try:
+                send_order_placed_sms(
+                    mobile=user.mobile,
+                    user_name=user.first_name or "Customer",
+                    order_id=order.order_id,
+                    total_amount=total_amount,
+                )
+            except Exception as e:
+                print(f"COD order SMS failed: {e}")
+
+        return Response({
+            "message": "Order placed successfully with Cash on Delivery.",
+            "order_id": order.order_id,
+            "payment_id": payment.payment_id,
+            "amount": str(total_amount),
+            "payment_status": payment.status,
+        }, status=status.HTTP_201_CREATED)
+
+
+class CodCollectView(APIView):
+    permission_classes = [IsSuperAdminOrHasPaymentPermission]
+
+    def patch(self, request, order_id):
+        try:
+            order = Order.objects.get(order_id=order_id)
+        except Order.DoesNotExist:
+            return Response({"error": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if order.payment_method != 'cod':
+            return Response({"error": "This order is not a COD order."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            payment = Payment.objects.get(order=order)
+        except Payment.DoesNotExist:
+            return Response({"error": "Payment record not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if payment.status == 'Completed':
+            return Response({"error": "Payment already collected."}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment.status = 'Completed'
+        payment.save()
+
+        return Response({
+            "message": "COD payment collected successfully.",
+            "order_id": order.order_id,
+            "payment_id": payment.payment_id,
+            "amount": str(payment.amount),
+            "payment_status": payment.status,
+        }, status=status.HTTP_200_OK)
 
 
 class PaymentViewSet(viewsets.ModelViewSet):

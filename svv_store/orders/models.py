@@ -25,8 +25,14 @@ class DeliveryPerson(models.Model):
             models.Index(fields=['mobile'])  # Index on the 'mobile' field for fast lookups
         ]
 class Order(models.Model):
+    PAYMENT_METHOD_CHOICES = [
+        ('online', 'Online'),
+        ('cod', 'Cash on Delivery'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     status = models.ForeignKey(OrderStatus, on_delete=models.SET_NULL, null=True)
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='online')
     tracking_link = models.URLField(blank=True, null=True)
 
     delivery_person = models.ForeignKey(
