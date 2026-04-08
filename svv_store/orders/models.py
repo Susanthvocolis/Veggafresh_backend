@@ -32,6 +32,7 @@ class Order(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     status = models.ForeignKey(OrderStatus, on_delete=models.SET_NULL, null=True)
+    address = models.ForeignKey('address.Address', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='online')
     tracking_link = models.URLField(blank=True, null=True)
 

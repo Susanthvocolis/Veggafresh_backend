@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from address.serializers import AddressSerializer
 from payments.models import Payment
 from .models import Order, OrderItem, OrderStatus, DeliveryPerson
 
@@ -31,13 +32,16 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
+    product_variant_id = serializers.IntegerField(source='product_variant.id', read_only=True)
     product_variant = serializers.StringRelatedField()
     product_name = serializers.CharField(source='product_variant.product.name', read_only=True)
     product_image = serializers.SerializerMethodField()
+    price = serializers.DecimalField(source='product_variant.price', max_digits=10, decimal_places=2, read_only=True)
+    discounted_price = serializers.DecimalField(source='product_variant.discounted_price', max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model = OrderItem
-        fields = ['id', 'product_variant', 'product_name', 'product_image', 'quantity']
+        fields = ['id', 'product_variant_id', 'product_variant', 'product_name', 'product_image', 'quantity', 'price', 'discounted_price']
 
     def get_product_image(self, obj):
         image = obj.product_variant.product.images.first()
@@ -57,12 +61,14 @@ class OrderSerializer(serializers.ModelSerializer):
     payment_status = serializers.SerializerMethodField()
     payment_amount = serializers.SerializerMethodField()
     delivery_person = DeliveryPersonSerializer(read_only=True)
+    address = AddressSerializer(read_only=True)
+    final_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model = Order
         fields = [
             'id', 'user', 'status', 'order_id', 'payment_method', 'tracking_link',
-            'delivery_person', 'created_at', 'items',
+            'delivery_person', 'created_at', 'items', 'address', 'final_amount',
             'payment_status', 'payment_amount'
         ]
 

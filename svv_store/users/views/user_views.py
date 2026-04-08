@@ -31,7 +31,7 @@ class RequestOTPView(APIView):
         # Bypass OTP for test numbers — skip SMS and OTP creation
         if identifier_type == 'mobile' and identifier in settings.OTP_BYPASS_MOBILES:
             return Response({
-                'message': f'OTP sent to {identifier_type} successfully',
+                'message': f'Test OTP sent to {identifier_type} successfully',
                 'identifier': identifier
             })
 
@@ -130,13 +130,24 @@ class VerifyOTPView(APIView):
 class ProfileCompletionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request):
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+
+    def patch(self, request):
         user = request.user
         serializer = ProfileCompletionSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save(profile_complete=True)
-            return Response({'message': 'Profile completed successfully'})
+            return Response({
+                'message': 'Profile completed successfully',
+                'user': UserSerializer(user).data,
+            })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # keep POST for backwards compatibility
+    def post(self, request):
+        return self.patch(request)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):

@@ -47,7 +47,7 @@ def _send_sms(params):
         return response.text.strip() or None
     except requests.RequestException as e:
         print(f"SMS sending failed: {e}")
-        return None
+        raise
 
 
 def _format_destination(mobile):

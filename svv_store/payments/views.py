@@ -4,6 +4,7 @@ from rest_framework import filters
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from decimal import Decimal
+from address.models import Address
 from cart.models import Cart
 from cart.serializers import CartSerializer
 from svv_store import settings
@@ -21,8 +22,20 @@ from phonepe.sdk.pg.env import Env
 from users.services import send_order_placed_sms
 
 class InitiatePhonePePayment(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         user = request.user
+
+        # Validate address
+        address_id = request.data.get('address_id')
+        if not address_id:
+            return Response({"error": "address_id is required to place an order."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            address = Address.objects.get(id=address_id, user=user)
+        except Address.DoesNotExist:
+            return Response({"error": "Address not found. Please add a delivery address."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             cart = Cart.objects.get(user=user)
         except Cart.DoesNotExist:
@@ -36,7 +49,7 @@ class InitiatePhonePePayment(APIView):
 
         # 1. Create Order
         initial_status, _ = OrderStatus.objects.get_or_create(name="Initiated")
-        order = Order.objects.create(user=user, status=initial_status)
+        order = Order.objects.create(user=user, status=initial_status, address=address)
 
         # Create OrderItems from CartItems
         for item in cart.items.all():
@@ -137,6 +150,16 @@ class CodOrderCreateView(APIView):
 
     def post(self, request):
         user = request.user
+
+        # Validate address
+        address_id = request.data.get('address_id')
+        if not address_id:
+            return Response({"error": "address_id is required to place an order."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            address = Address.objects.get(id=address_id, user=user)
+        except Address.DoesNotExist:
+            return Response({"error": "Address not found. Please add a delivery address."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             cart = Cart.objects.get(user=user)
         except Cart.DoesNotExist:
@@ -147,7 +170,7 @@ class CodOrderCreateView(APIView):
 
         # Create order
         pending_status, _ = OrderStatus.objects.get_or_create(name="Pending")
-        order = Order.objects.create(user=user, status=pending_status, payment_method='cod')
+        order = Order.objects.create(user=user, status=pending_status, payment_method='cod', address=address)
 
         for item in cart.items.all():
             OrderItem.objects.create(
