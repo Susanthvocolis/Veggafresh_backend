@@ -228,3 +228,18 @@ PHONEPE_CONFIG = {
     'BASE_URL': os.getenv('PHONEPE_BASE_URL'),
     'REDIRECT_URL': os.getenv('PHONEPE_REDIRECT_URL'),
 }
+
+# settings.py
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://admin.veggafresh.com",
+    "https://veggafresh.com",
+]
+
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+SESSION_COOKIE_SECURE = True
+
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
