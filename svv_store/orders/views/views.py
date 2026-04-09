@@ -3,6 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework import filters
 from orders.filters import OrderFilter
 from orders.models import Order, OrderStatus, DeliveryPerson
@@ -130,8 +131,23 @@ class AdminOrderViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'], url_path='status-options')
     def status_options(self, request):
-        statuses = OrderStatus.objects.all().values('id', 'name')
-        return Response({"status_options": list(statuses)})
+        msg_map = {
+            "Accepted": "Order has been accepted.",
+            "Cancelled": "Order has been cancelled. Sorry for the inconvenience.",
+            "Assign to Delivery Partner": "Order assigned to delivery partner.",
+            "Out For Delivery": "Order is out for delivery.",
+            "Delivery Status Update": "Thank you! Order has been marked as delivered.",
+        }
+
+        statuses = [
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "message": msg_map.get(s["name"], "Order status updated."),
+            }
+            for s in OrderStatus.objects.all().values("id", "name")
+        ]
+        return Response({"status_options": statuses})
 class UserOrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
@@ -161,3 +177,32 @@ class DeliveryPersonViewSet(viewsets.ModelViewSet):
     queryset = DeliveryPerson.objects.all()
     serializer_class = DeliveryPersonSerializer
     permission_classes = [IsAuthenticated]
+
+
+# Message shown to customer for each order status
+ORDER_STATUS_MESSAGES = {
+    "Accepted": "Order has been accepted.",
+    "Cancelled": "Order has been cancelled. Sorry for the inconvenience.",
+    "Assign to Delivery Partner": "Order assigned to delivery partner.",
+    "Out For Delivery": "Order is out for delivery.",
+    "Delivery Status Update": "Thank you! Order has been marked as delivered.",
+}
+
+
+class OrderStatusListView(APIView):
+    """
+    GET /api/v1/order-statuses/
+    Returns all order statuses with their id, name, and customer-facing message.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        statuses = [
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "message": ORDER_STATUS_MESSAGES.get(s["name"], "Order status updated."),
+            }
+            for s in OrderStatus.objects.all().values("id", "name")
+        ]
+        return Response({"status_options": statuses})

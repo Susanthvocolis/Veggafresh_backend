@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from orders.views.analytics import SalesPerMonthView, MostSoldProductOfMonth, LeastSoldProductOfMonth, SalesReportView
 from orders.views.report_export import SalesReportExportView, SecureFileDownloadView
 from orders.views.user_views import MyOrdersView, MyOrderDetailView, ReorderView
-from orders.views.views import AdminOrderViewSet, OrderStatusViewSet, DeliveryPersonViewSet, AdminFilterOrderViewSet
+from orders.views.views import AdminOrderViewSet, OrderStatusViewSet, DeliveryPersonViewSet, AdminFilterOrderViewSet, OrderStatusListView
 
 router = DefaultRouter()
   # or customize
@@ -26,4 +26,7 @@ urlpatterns = [
     path('my-orders/', MyOrdersView.as_view(), name='my-orders'),
     path('my-orders/<str:order_id>/', MyOrderDetailView.as_view(), name='my-order-detail'),
     path('my-orders/<str:order_id>/reorder/', ReorderView.as_view(), name='reorder'),
+
+    # Order status list with messages
+    path('order-statuses/', OrderStatusListView.as_view(), name='order-statuses'),
 ]

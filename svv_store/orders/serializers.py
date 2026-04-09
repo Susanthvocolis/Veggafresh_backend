@@ -88,13 +88,14 @@ class OrderSerializer(serializers.ModelSerializer):
 
 class OrderStatusUpdateSerializer(serializers.ModelSerializer):
     status = serializers.PrimaryKeyRelatedField(queryset=OrderStatus.objects.all())
-    delivery_person = serializers.PrimaryKeyRelatedField(
-        queryset=DeliveryPerson.objects.all(), required=False
-    )
+    # delivery_person = serializers.PrimaryKeyRelatedField(
+    #     queryset=DeliveryPerson.objects.all(), required=False
+    # )
+    # tracking_link removed
 
     class Meta:
         model = Order
-        fields = ['status', 'tracking_link', 'delivery_person']
+        fields = ['status']  # only status is updated
 
 
 class OrderStatusSerializer(serializers.ModelSerializer):

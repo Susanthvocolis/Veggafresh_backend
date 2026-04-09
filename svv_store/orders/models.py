@@ -2,6 +2,7 @@ from django.db import models
 from users.models import User
 from products.models import ProductVariant
 from django.utils import timezone
+
 class OrderStatus(models.Model):
     name = models.CharField(max_length=100, unique=True)
 
