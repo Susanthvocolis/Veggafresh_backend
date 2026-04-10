@@ -157,7 +157,20 @@ class UserProductAPIView(APIView):
         max_page_size = 100
 
     def get(self, request):
-        cache_key = 'product_list_cache'
+        params = request.query_params
+
+        # Build a param-aware cache key — each unique filter/page combo is cached separately
+        cache_key = (
+            f"products"
+            f"_cat{params.get('category', '')}"
+            f"_sub{params.get('subcategory', '')}"
+            f"_brand{params.get('brand', '')}"
+            f"_q{params.get('search', '')}"
+            f"_active{params.get('is_active', 'true')}"
+            f"_p{params.get('page', 1)}"
+            f"_ps{params.get('page_size', 10)}"
+        )
+
         cached_data = cache.get(cache_key)
         if cached_data:
             return Response(cached_data)
@@ -167,8 +180,6 @@ class UserProductAPIView(APIView):
         ).prefetch_related(
             'variants', 'images'
         ).order_by('-created_at')
-
-        params = request.query_params
 
         is_active = params.get('is_active')
         if is_active is None:
@@ -199,10 +210,9 @@ class UserProductAPIView(APIView):
 
         paginator = self.CustomPagination()
         page = paginator.paginate_queryset(queryset, request)
-        if page is not None:
-            serializer = ProductSerializer(page, many=True, context={'request': request})
-            return paginator.get_paginated_response(serializer.data)
+        serializer = ProductSerializer(page, many=True, context={'request': request})
+        response = paginator.get_paginated_response(serializer.data)
 
-        serializer = ProductSerializer(queryset, many=True, context={'request': request})
-        cache.set(cache_key, serializer.data, timeout=60 * 5)
-        return Response(serializer.data)
+        # Cache the paginated response data (5 minutes)
+        cache.set(cache_key, response.data, timeout=60 * 5)
+        return response
