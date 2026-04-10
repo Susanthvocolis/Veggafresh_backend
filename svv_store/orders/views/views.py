@@ -21,12 +21,14 @@ class AdminFilterOrderViewSet(viewsets.ModelViewSet):
     filterset_class = OrderFilter  # This ties the filter class to your viewset
     search_fields = ['order_id', 'status__name']  # Add any additional search fields here
     ordering_fields = ['created_at']
+    ordering = ['-created_at']  # Default: newest orders first
 class GetAllOrderViewSet(viewsets.ViewSet):
     permission_classes = [IsSuperAdminOrHasOrderPermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = OrderFilter  # This ties the filter class to your viewset
     search_fields = ['order_id', 'status__name']  # Add any additional search fields here
     ordering_fields = ['created_at']
+    ordering = ['-created_at']  # Default: newest orders first
 
     def list(self, request, *args, **kwargs):
         # Get filters and page parameters from the request
@@ -152,8 +154,12 @@ class UserOrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
 
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']  # Default: newest orders first
+
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user)
+        return Order.objects.filter(user=self.request.user).order_by('-created_at')
 
     def perform_create(self, serializer):
         order = serializer.save(user=self.request.user)
