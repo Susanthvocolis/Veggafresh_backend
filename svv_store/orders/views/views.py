@@ -59,19 +59,78 @@ class GetAllOrderViewSet(viewsets.ViewSet):
 
 
 class AdminOrderViewSet(viewsets.ViewSet):
+    """
+    GET /api/v1/orders/
+    Supports filtering, searching, and sorting.
+
+    Filter params:
+      ?order_id=          — partial match on order ID
+      ?status=            — partial match on status name (e.g. Accepted, Cancelled)
+      ?user_id=           — exact user ID
+      ?user_email=        — partial match on user email
+      ?user_mobile=       — partial match on user mobile
+      ?payment_method=    — 'online' or 'cod'
+      ?order_date_from=   — YYYY-MM-DD (created_at >= date)
+      ?order_date_to=     — YYYY-MM-DD (created_at <= date)
+
+    Search param:
+      ?search=            — searches order_id and status name
+
+    Sort param:
+      ?ordering=created_at     — oldest first
+      ?ordering=-created_at    — newest first (default)
+      ?ordering=final_amount   — amount ascending (computed, not DB orderable)
+    """
     permission_classes = [IsSuperAdminOrHasOrderPermission]
+
+    # Declare backends so DRF schema / browsable API picks them up
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = OrderFilter
+    search_fields = ['order_id', 'status__name']
+    ordering_fields = ['created_at', 'payment_method']
+    ordering = ['-created_at']
+
+    def _get_queryset(self, request):
+        """Build and return the filtered + sorted queryset for the request."""
+        queryset = (
+            Order.objects
+            .all()
+            .select_related('status', 'user', 'delivery_person')
+            .order_by('-created_at')
+        )
+
+        # Apply DjangoFilterBackend (uses OrderFilter: status, user, date range, order_id)
+        queryset = DjangoFilterBackend().filter_queryset(request, queryset, self)
+
+        # Apply SearchFilter (?search=)
+        queryset = filters.SearchFilter().filter_queryset(request, queryset, self)
+
+        # Apply OrderingFilter (?ordering=)
+        queryset = filters.OrderingFilter().filter_queryset(request, queryset, self)
+
+        # Extra: filter by payment_method directly (?payment_method=online|cod)
+        payment_method = request.query_params.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method__iexact=payment_method)
+
+        return queryset
+
     def list(self, request):
-        orders = Order.objects.all().select_related('status', 'user', 'delivery_person').order_by('-created_at')
-        serializer = OrderSerializer(orders, many=True)
-        return Response(serializer.data)
+        queryset = self._get_queryset(request)
+        serializer = OrderSerializer(queryset, many=True)
+        return Response({
+            'count': queryset.count(),
+            'results': serializer.data,
+        })
 
     def retrieve(self, request, pk=None):
         try:
-            order = Order.objects.get(pk=pk)
+            order = Order.objects.select_related('status', 'user', 'delivery_person').get(pk=pk)
             serializer = OrderSerializer(order)
             return Response(serializer.data)
         except Order.DoesNotExist:
             return Response({'message': 'Order not found'}, status=404)
+
     def destroy(self, request, pk=None):
         try:
             order = Order.objects.get(pk=pk)
