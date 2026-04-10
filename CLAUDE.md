@@ -74,3 +74,54 @@ Pagination is handled by `utils.pagination.CustomPageNumberPagination`.
 ### Settings
 
 `svv_store/svv_store/settings.py` — all secrets loaded from `.env` via `python-dotenv`. Database is PostgreSQL (`psycopg2-binary`). CORS is open (`CORS_ALLOW_ALL_ORIGINS = True`) in current config.
+
+## Git Workflow — MANDATORY RULES
+
+> **NEVER push code changes directly to `main`.** Always follow the branch workflow below.
+
+### Branch Naming Convention
+
+| Change type | Branch name pattern | Example |
+|---|---|---|
+| New feature | `feature/<short-description>` | `feature/order-filters` |
+| Bug fix | `fix/<short-description>` | `fix/order-shuffle` |
+| Hot fix (urgent prod fix) | `hotfix/<short-description>` | `hotfix/payment-crash` |
+| Chore / docs / refactor | `chore/<short-description>` | `chore/update-claude-md` |
+
+### Step-by-Step Push Process
+
+Every time code changes are pushed:
+
+```bash
+# 1. Make sure you are on main and it is up to date
+git checkout main
+git pull origin main
+
+# 2. Create a new branch for your changes
+git checkout -b feature/<description>
+
+# 3. Stage and commit your changes
+git add <files>
+git commit -m "type: short meaningful message"
+
+# 4. Push the new branch (NEVER push directly to main)
+git push origin feature/<description>
+
+# 5. Raise a Pull Request on GitHub when ready to merge
+#    URL: https://github.com/Susanthvocolis/Veggafresh_backend/pull/new/feature/<description>
+```
+
+### Commit Message Format
+
+```
+type: short description (max 72 chars)
+
+- Bullet point detail (optional)
+- Another detail
+```
+
+Types: `feat`, `fix`, `hotfix`, `chore`, `docs`, `refactor`, `test`
+
+### What Goes to `main` Directly
+
+**Nothing.** Only merge into `main` via a Pull Request after local testing is complete.
