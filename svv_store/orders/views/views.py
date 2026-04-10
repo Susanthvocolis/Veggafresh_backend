@@ -9,9 +9,8 @@ from orders.filters import OrderFilter
 from orders.models import Order, OrderStatus, DeliveryPerson
 from orders.permissions import IsSuperAdminOrHasOrderPermission
 from orders.serializers import OrderSerializer, OrderStatusUpdateSerializer, OrderStatusSerializer, \
-    DeliveryPersonSerializer, AdminOrderSerializer
+    DeliveryPersonSerializer
 from users.services import send_order_placed_sms, send_out_for_delivery_sms
-from utils.pagination import CustomPageNumberPagination
 
 class AdminFilterOrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all().select_related('status', 'user', 'delivery_person').order_by('-created_at')
@@ -62,7 +61,7 @@ class GetAllOrderViewSet(viewsets.ViewSet):
 class AdminOrderViewSet(viewsets.ViewSet):
     """
     GET /api/v1/orders/
-    Supports filtering, searching, sorting, and pagination.
+    Supports filtering, searching, and sorting.
 
     Filter params:
       ?order_id=          — partial match on order ID
@@ -80,11 +79,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
     Sort param:
       ?ordering=created_at     — oldest first
       ?ordering=-created_at    — newest first (default)
-      ?ordering=payment_method — sort by payment type
-
-    Pagination params:
-      ?page_no=           — page number (default: 1)
-      ?page_size=         — items per page (default: 10, max: 100)
+      ?ordering=final_amount   — amount ascending (computed, not DB orderable)
     """
     permission_classes = [IsSuperAdminOrHasOrderPermission]
 
@@ -122,15 +117,16 @@ class AdminOrderViewSet(viewsets.ViewSet):
 
     def list(self, request):
         queryset = self._get_queryset(request)
-        paginator = CustomPageNumberPagination()
-        page = paginator.paginate_queryset(queryset, request)
-        serializer = AdminOrderSerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        serializer = OrderSerializer(queryset, many=True)
+        return Response({
+            'count': queryset.count(),
+            'results': serializer.data,
+        })
 
     def retrieve(self, request, pk=None):
         try:
             order = Order.objects.select_related('status', 'user', 'delivery_person').get(pk=pk)
-            serializer = AdminOrderSerializer(order)
+            serializer = OrderSerializer(order)
             return Response(serializer.data)
         except Order.DoesNotExist:
             return Response({'message': 'Order not found'}, status=404)
