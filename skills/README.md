@@ -17,6 +17,7 @@ This folder contains skill files that document how to work with the **VeggaFresh
 | [07_sms_email_notifications.md](./07_sms_email_notifications.md) | SMS, Email & Notifications | BulkSMS integration, OTP bypass, adding new SMS types, signed URLs |
 | [08_migrations_models_database.md](./08_migrations_models_database.md) | Migrations, Models & Database | Migration workflow, ORM patterns, Redis cache, admin registration |
 | [09_debugging_troubleshooting.md](./09_debugging_troubleshooting.md) | Debugging & Troubleshooting | Common errors, fixes, shell debugging, production checklist |
+| [10_git_workflow.md](./10_git_workflow.md) | Git Workflow & Branch Management | Branch naming, commit format, never push to main, reverting commits |
 
 ---
 
