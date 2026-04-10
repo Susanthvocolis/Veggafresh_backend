@@ -18,6 +18,10 @@ This folder contains skill files that document how to work with the **VeggaFresh
 | [08_migrations_models_database.md](./08_migrations_models_database.md) | Migrations, Models & Database | Migration workflow, ORM patterns, Redis cache, admin registration |
 | [09_debugging_troubleshooting.md](./09_debugging_troubleshooting.md) | Debugging & Troubleshooting | Common errors, fixes, shell debugging, production checklist |
 | [10_git_workflow.md](./10_git_workflow.md) | Git Workflow & Branch Management | Branch naming, commit format, never push to main, reverting commits |
+| [11_filtering_sorting_pagination.md](./11_filtering_sorting_pagination.md) | Filtering, Sorting & Pagination | FilterSet, OrderingFilter, SearchFilter, CustomPageNumberPagination, order shuffle fix |
+| [12_permissions_rbac.md](./12_permissions_rbac.md) | Permissions & RBAC | 3 roles, ModulePermission, custom permission classes, action mapping |
+| [13_serializers_response_format.md](./13_serializers_response_format.md) | Serializers & API Response Format | CustomRenderer envelope, nested serializers, admin vs user serializers, N+1 in serializers |
+| [14_query_optimization_performance.md](./14_query_optimization_performance.md) | Query Optimization & Performance | select_related, prefetch_related, annotate, indexes, Redis caching, SQL debugging |
 
 ---
 
