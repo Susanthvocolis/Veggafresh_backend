@@ -61,7 +61,7 @@ class GetAllOrderViewSet(viewsets.ViewSet):
 class AdminOrderViewSet(viewsets.ViewSet):
     permission_classes = [IsSuperAdminOrHasOrderPermission]
     def list(self, request):
-        orders = Order.objects.all()
+        orders = Order.objects.all().select_related('status', 'user', 'delivery_person').order_by('-created_at')
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data)
 
@@ -82,7 +82,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'], url_path='status/(?P<status_name>[^/.]+)')
     def get_by_status(self, request, status_name=None):
-        orders = Order.objects.filter(status__name__iexact=status_name)
+        orders = Order.objects.filter(status__name__iexact=status_name).order_by('-created_at')
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data)
 
