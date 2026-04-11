@@ -93,6 +93,58 @@ class OrderSerializer(serializers.ModelSerializer):
         return payment.amount if payment else None
 
 
+# ── Admin-only serializers (no product_image for lighter responses) ──────────
+
+class AdminOrderItemSerializer(serializers.ModelSerializer):
+    """Like OrderItemSerializer but excludes product_image."""
+    product_variant_id = serializers.IntegerField(source='product_variant.id', read_only=True)
+    product_variant = serializers.StringRelatedField()
+    product_name = serializers.CharField(source='product_variant.product.name', read_only=True)
+    price = serializers.DecimalField(source='product_variant.price', max_digits=10, decimal_places=2, read_only=True)
+    discounted_price = serializers.DecimalField(source='product_variant.discounted_price', max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ['id', 'product_variant_id', 'product_variant', 'product_name', 'quantity', 'price', 'discounted_price']
+
+
+class AdminOrderSerializer(serializers.ModelSerializer):
+    """Order serializer for admin endpoints — items have no product_image."""
+    user = serializers.StringRelatedField()
+    status = serializers.StringRelatedField()
+    items = AdminOrderItemSerializer(many=True, read_only=True)
+    payment_status = serializers.SerializerMethodField()
+    payment_amount = serializers.SerializerMethodField()
+    delivery_person = DeliveryPersonSerializer(read_only=True)
+    address = AddressSerializer(read_only=True)
+    final_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'user', 'status', 'order_id', 'payment_method', 'tracking_link',
+            'delivery_person', 'created_at', 'items', 'address', 'final_amount',
+            'payment_status', 'payment_amount'
+        ]
+
+    def _get_payment(self, obj):
+        prefetched = getattr(obj, '_prefetched_objects_cache', {})
+        if 'payment_set' in prefetched:
+            payments = prefetched['payment_set']
+            return payments[0] if payments else None
+        if not hasattr(obj, '_cached_payment'):
+            obj._cached_payment = Payment.objects.filter(order=obj).first()
+        return obj._cached_payment
+
+    def get_payment_status(self, obj):
+        payment = self._get_payment(obj)
+        return payment.status if payment else None
+
+    def get_payment_amount(self, obj):
+        payment = self._get_payment(obj)
+        return payment.amount if payment else None
+
+
 class OrderStatusUpdateSerializer(serializers.ModelSerializer):
     status = serializers.PrimaryKeyRelatedField(queryset=OrderStatus.objects.all())
     # delivery_person = serializers.PrimaryKeyRelatedField(

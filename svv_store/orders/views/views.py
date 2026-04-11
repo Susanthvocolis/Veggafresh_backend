@@ -9,8 +9,9 @@ from orders.filters import OrderFilter
 from orders.models import Order, OrderStatus, DeliveryPerson
 from orders.permissions import IsSuperAdminOrHasOrderPermission
 from orders.serializers import OrderSerializer, OrderStatusUpdateSerializer, OrderStatusSerializer, \
-    DeliveryPersonSerializer
+    DeliveryPersonSerializer, AdminOrderSerializer
 from users.services import send_order_placed_sms, send_out_for_delivery_sms
+from utils.pagination import CustomPageNumberPagination
 
 class AdminFilterOrderViewSet(viewsets.ModelViewSet):
     queryset = (
@@ -67,9 +68,43 @@ class GetAllOrderViewSet(viewsets.ViewSet):
 
 
 class AdminOrderViewSet(viewsets.ViewSet):
+    """
+    GET /api/v1/orders/
+    Supports filtering, searching, sorting, and pagination.
+
+    Filter params:
+      ?order_id=          — partial match on order ID
+      ?status=            — partial match on status name (e.g. Accepted, Cancelled)
+      ?user_id=           — exact user ID
+      ?user_email=        — partial match on user email
+      ?user_mobile=       — partial match on user mobile
+      ?payment_method=    — 'online' or 'cod'
+      ?order_date_from=   — YYYY-MM-DD (created_at >= date)
+      ?order_date_to=     — YYYY-MM-DD (created_at <= date)
+
+    Search param:
+      ?search=            — searches order_id and status name
+
+    Sort param:
+      ?ordering=created_at     — oldest first
+      ?ordering=-created_at    — newest first (default)
+      ?ordering=payment_method — sort by payment type
+
+    Pagination params:
+      ?page_no=           — page number (default: 1)
+      ?page_size=         — items per page (default: 10, max: 100)
+    """
     permission_classes = [IsSuperAdminOrHasOrderPermission]
-    def list(self, request):
-        orders = (
+
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = OrderFilter
+    search_fields = ['order_id', 'status__name']
+    ordering_fields = ['created_at', 'payment_method']
+    ordering = ['-created_at']
+
+    def _get_queryset(self, request):
+        """Build and return the filtered + sorted queryset for the request."""
+        queryset = (
             Order.objects.all()
             .select_related('status', 'user', 'delivery_person', 'address')
             .prefetch_related(
@@ -78,8 +113,29 @@ class AdminOrderViewSet(viewsets.ViewSet):
             )
             .order_by('-created_at')
         )
-        serializer = OrderSerializer(orders, many=True)
-        return Response(serializer.data)
+
+        # Apply DjangoFilterBackend (uses OrderFilter: status, user, date range, order_id)
+        queryset = DjangoFilterBackend().filter_queryset(request, queryset, self)
+
+        # Apply SearchFilter (?search=)
+        queryset = filters.SearchFilter().filter_queryset(request, queryset, self)
+
+        # Apply OrderingFilter (?ordering=)
+        queryset = filters.OrderingFilter().filter_queryset(request, queryset, self)
+
+        # Extra: filter by payment_method directly (?payment_method=online|cod)
+        payment_method = request.query_params.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method__iexact=payment_method)
+
+        return queryset
+
+    def list(self, request):
+        queryset = self._get_queryset(request)
+        paginator = CustomPageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = AdminOrderSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     def retrieve(self, request, pk=None):
         try:
@@ -92,7 +148,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
                 )
                 .get(pk=pk)
             )
-            serializer = OrderSerializer(order)
+            serializer = AdminOrderSerializer(order)
             return Response(serializer.data)
         except Order.DoesNotExist:
             return Response({'message': 'Order not found'}, status=404)
