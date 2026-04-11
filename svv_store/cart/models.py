@@ -18,6 +18,9 @@ class Cart(models.Model):
         return f"Cart of {self.user.email}"
 
     def calculate_totals(self):
+        from django.db.models import Sum, F, Case, When, DecimalField as DBDecimalField
+        from django.db.models.functions import Coalesce
+
         if not self.items.exists():
             self.total_amount = Decimal('0.00')
             self.taxes = Decimal('0.00')
@@ -25,16 +28,20 @@ class Cart(models.Model):
             self.delivery_charges = Decimal('0.00')
             self.final_amount = Decimal('0.00')
         else:
-            subtotal = sum(
-                (
-                        (item.product_variant.discounted_price
-                         if item.product_variant.discounted_price
-                            and item.product_variant.discounted_price != Decimal('0')
-                         else item.product_variant.price
-                         ) * item.quantity
+            # Single DB query instead of Python loop — uses discounted_price when > 0, else price
+            result = self.items.aggregate(
+                subtotal=Sum(
+                    Case(
+                        When(
+                            product_variant__discounted_price__gt=0,
+                            then=F('product_variant__discounted_price') * F('quantity')
+                        ),
+                        default=F('product_variant__price') * F('quantity'),
+                        output_field=DBDecimalField(max_digits=10, decimal_places=2)
+                    )
                 )
-                for item in self.items.all()
             )
+            subtotal = result['subtotal'] or Decimal('0.00')
             taxes = subtotal * Decimal(os.getenv("TAX_PERCENT", 0.18))
             handling = Decimal(os.getenv("HANDLING_CHARGE", 30))
             delivery = Decimal(os.getenv("DELIVERY_CHARGE", 50))

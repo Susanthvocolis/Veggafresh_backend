@@ -22,7 +22,10 @@ class MyOrdersView(APIView):
             Order.objects
             .filter(user=request.user)
             .select_related('status', 'delivery_person', 'address')
-            .prefetch_related('items__product_variant__product__images')
+            .prefetch_related(
+                'items__product_variant__product__images',
+                'payment_set',   # eliminates Payment N+1
+            )
             .order_by('-created_at')
         )
         serializer = OrderSerializer(orders, many=True)
@@ -41,7 +44,10 @@ class MyOrderDetailView(APIView):
             order = (
                 Order.objects
                 .select_related('status', 'delivery_person', 'address')
-                .prefetch_related('items__product_variant__product__images')
+                .prefetch_related(
+                    'items__product_variant__product__images',
+                    'payment_set',   # eliminates Payment N+1
+                )
                 .get(order_id=order_id, user=request.user)
             )
         except Order.DoesNotExist:

@@ -12,6 +12,12 @@ class CartViewSet(viewsets.ViewSet):
 
     def list(self, request):
         cart, _ = Cart.objects.get_or_create(user=request.user)
+        # Fetch cart with all related data in minimal queries
+        cart = (
+            Cart.objects
+            .prefetch_related('items__product_variant__product__images')
+            .get(id=cart.id)
+        )
         serializer = CartSerializer(cart)
         return Response(serializer.data)
 

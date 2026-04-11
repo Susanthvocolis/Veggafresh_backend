@@ -73,6 +73,13 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
 
     def _get_payment(self, obj):
+        # Use prefetched payment_set if available (set via prefetch_related('payment_set') in the view)
+        # This eliminates the N+1: instead of 1 query per order, Django fetches all payments in 1 query.
+        prefetched = getattr(obj, '_prefetched_objects_cache', {})
+        if 'payment_set' in prefetched:
+            payments = prefetched['payment_set']
+            return payments[0] if payments else None
+        # Fallback: single object cache for non-prefetched calls (e.g. retrieve())
         if not hasattr(obj, '_cached_payment'):
             obj._cached_payment = Payment.objects.filter(order=obj).first()
         return obj._cached_payment

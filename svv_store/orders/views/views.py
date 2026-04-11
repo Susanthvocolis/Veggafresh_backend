@@ -13,13 +13,21 @@ from orders.serializers import OrderSerializer, OrderStatusUpdateSerializer, Ord
 from users.services import send_order_placed_sms, send_out_for_delivery_sms
 
 class AdminFilterOrderViewSet(viewsets.ModelViewSet):
-    queryset = Order.objects.all().select_related('status', 'user', 'delivery_person').order_by('-created_at')
+    queryset = (
+        Order.objects.all()
+        .select_related('status', 'user', 'delivery_person', 'address')
+        .prefetch_related(
+            'items__product_variant__product__images',  # order items chain
+            'payment_set',                              # eliminates Payment N+1
+        )
+        .order_by('-created_at')
+    )
     serializer_class = OrderSerializer
     permission_classes = [IsSuperAdminOrHasOrderPermission]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_class = OrderFilter  # This ties the filter class to your viewset
-    search_fields = ['order_id', 'status__name']  # Add any additional search fields here
+    filterset_class = OrderFilter
+    search_fields = ['order_id', 'status__name']
     ordering_fields = ['created_at']
     ordering = ['-created_at']  # Default: newest orders first
 class GetAllOrderViewSet(viewsets.ViewSet):
@@ -61,13 +69,29 @@ class GetAllOrderViewSet(viewsets.ViewSet):
 class AdminOrderViewSet(viewsets.ViewSet):
     permission_classes = [IsSuperAdminOrHasOrderPermission]
     def list(self, request):
-        orders = Order.objects.all().select_related('status', 'user', 'delivery_person').order_by('-created_at')
+        orders = (
+            Order.objects.all()
+            .select_related('status', 'user', 'delivery_person', 'address')
+            .prefetch_related(
+                'items__product_variant__product__images',
+                'payment_set',
+            )
+            .order_by('-created_at')
+        )
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
         try:
-            order = Order.objects.get(pk=pk)
+            order = (
+                Order.objects
+                .select_related('status', 'user', 'delivery_person', 'address')
+                .prefetch_related(
+                    'items__product_variant__product__images',
+                    'payment_set',
+                )
+                .get(pk=pk)
+            )
             serializer = OrderSerializer(order)
             return Response(serializer.data)
         except Order.DoesNotExist:
@@ -82,7 +106,16 @@ class AdminOrderViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'], url_path='status/(?P<status_name>[^/.]+)')
     def get_by_status(self, request, status_name=None):
-        orders = Order.objects.filter(status__name__iexact=status_name).order_by('-created_at')
+        orders = (
+            Order.objects
+            .filter(status__name__iexact=status_name)
+            .select_related('status', 'user', 'delivery_person', 'address')
+            .prefetch_related(
+                'items__product_variant__product__images',
+                'payment_set',
+            )
+            .order_by('-created_at')
+        )
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data)
 
