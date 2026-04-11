@@ -53,11 +53,11 @@ class InitiatePhonePePayment(APIView):
             user=user, 
             status=initial_status, 
             address=address,
-            total_amount=cart.total_amount,
-            taxes=cart.taxes,
-            handling_charges=cart.handling_charges,
-            delivery_charges=cart.delivery_charges,
-            final_amount=cart.final_amount
+            total_amount=cart.total_amount or Decimal('0.00'),
+            taxes=cart.taxes or Decimal('0.00'),
+            handling_charges=cart.handling_charges or Decimal('0.00'),
+            delivery_charges=cart.delivery_charges or Decimal('0.00'),
+            final_amount=cart.final_amount or Decimal('0.00')
         )
 
         # Create OrderItems from CartItems
@@ -186,11 +186,11 @@ class CodOrderCreateView(APIView):
             status=pending_status, 
             payment_method='cod', 
             address=address,
-            total_amount=cart.total_amount,
-            taxes=cart.taxes,
-            handling_charges=cart.handling_charges,
-            delivery_charges=cart.delivery_charges,
-            final_amount=cart.final_amount
+            total_amount=cart.total_amount or Decimal('0.00'),
+            taxes=cart.taxes or Decimal('0.00'),
+            handling_charges=cart.handling_charges or Decimal('0.00'),
+            delivery_charges=cart.delivery_charges or Decimal('0.00'),
+            final_amount=cart.final_amount or Decimal('0.00')
         )
 
         for item in cart.items.all():
