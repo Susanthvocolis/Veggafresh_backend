@@ -272,6 +272,9 @@ class DeliveryPersonViewSet(viewsets.ModelViewSet):
     queryset = DeliveryPerson.objects.all()
     serializer_class = DeliveryPersonSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['name', 'mobile']
+    ordering = ['name']
 
 
 # Message shown to customer for each order status

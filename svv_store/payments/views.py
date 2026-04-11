@@ -255,4 +255,5 @@ class PaymentViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = PaymentFilter
     search_fields = ['payment_id', 'order__id']
-    ordering_fields = ['payment_date']
+    ordering_fields = ['payment_date', 'amount', 'status']
+    ordering = ['-payment_date']

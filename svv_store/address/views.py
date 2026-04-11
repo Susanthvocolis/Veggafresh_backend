@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.response import Response
@@ -34,6 +34,8 @@ class AddressViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = AddressSerializer
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['city', 'state', 'pincode', 'created_at']
 
     def get_queryset(self):
         return Address.objects.filter(user=self.request.user).order_by('-is_default', '-created_at')
@@ -87,6 +89,9 @@ class AdminAddressViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsSuperAdminOrAdmin]
     serializer_class = AdminAddressSerializer
     http_method_names = ['get', 'delete', 'head', 'options']
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['city', 'state', 'pincode', 'created_at', 'user__email']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         qs = Address.objects.select_related('user').order_by('-created_at')

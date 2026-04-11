@@ -1,4 +1,4 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, filters
 from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
@@ -12,11 +12,17 @@ class EmployeeListView(generics.ListAPIView):
     queryset = User.objects.filter(role=User.Role.ADMIN)
     serializer_class = EmployeeSerializer
     permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['first_name', 'last_name', 'email', 'created_at']
+    ordering = ['-created_at']
 
 class UsersListView(generics.ListAPIView):
     queryset = User.objects.filter(role=User.Role.USER)
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['first_name', 'last_name', 'email', 'created_at']
+    ordering = ['-created_at']
 
 class EmployeeCreateView(generics.CreateAPIView):
     queryset = User.objects.all()

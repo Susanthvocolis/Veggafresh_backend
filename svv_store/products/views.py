@@ -6,7 +6,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Q
 from django.http import FileResponse, Http404
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -21,6 +21,9 @@ class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsSuperAdminOrHasProductPermission]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['name', 'brand', 'created_at', 'category__name', 'subcategory__name']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         is_active = self.request.query_params.get('is_active')
@@ -131,6 +134,9 @@ class ProductVariantViewSet(viewsets.ModelViewSet):
     queryset = ProductVariant.objects.all()
     serializer_class = ProductVariantSerializer
     permission_classes = [IsSuperAdminOrHasProductPermission]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['product__name', 'price', 'discounted_price']
+    ordering = ['id']
 
 
 class SecureMediaView(APIView):
@@ -167,6 +173,7 @@ class UserProductAPIView(APIView):
             f"_brand{params.get('brand', '')}"
             f"_q{params.get('search', '')}"
             f"_active{params.get('is_active', 'true')}"
+            f"_o{params.get('ordering', '-created_at')}"
             f"_p{params.get('page', 1)}"
             f"_ps{params.get('page_size', 10)}"
         )
@@ -175,11 +182,16 @@ class UserProductAPIView(APIView):
         if cached_data:
             return Response(cached_data)
 
+        ordering = params.get('ordering', '-created_at')
+        allowed_orderings = ['name', '-name', 'created_at', '-created_at']
+        if ordering not in allowed_orderings:
+            ordering = '-created_at'
+
         queryset = Product.objects.select_related(
             'category', 'subcategory', 'created_by', 'updated_by'
         ).prefetch_related(
             'variants', 'images'
-        ).order_by('-created_at')
+        ).order_by(ordering)
 
         is_active = params.get('is_active')
         if is_active is None:
