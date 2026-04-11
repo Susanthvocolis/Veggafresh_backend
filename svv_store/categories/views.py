@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.response import Response
 
 from categories.permissions import IsSuperAdminOrHasCategoryPermission
@@ -10,6 +10,9 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['name', 'created_at']
+    ordering = ['-created_at']
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method
@@ -46,6 +49,9 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
     queryset = SubCategory.objects.all()
     serializer_class = SubCategorySerializer
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['name', 'category__name', 'created_at']
+    ordering = ['-created_at']
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method

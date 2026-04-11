@@ -18,6 +18,11 @@ class MyOrdersView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        ordering = request.query_params.get('ordering', '-created_at')
+        allowed_orderings = ['created_at', '-created_at']
+        if ordering not in allowed_orderings:
+            ordering = '-created_at'
+
         orders = (
             Order.objects
             .filter(user=request.user)
@@ -26,7 +31,7 @@ class MyOrdersView(APIView):
                 'items__product_variant__product__images',
                 'payment_set',   # eliminates Payment N+1
             )
-            .order_by('-created_at')
+            .order_by(ordering)
         )
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data)
