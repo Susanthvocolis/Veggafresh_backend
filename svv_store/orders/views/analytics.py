@@ -99,7 +99,7 @@ class SalesReportView(APIView):
             total_items_sold = order_items.aggregate(total=Sum('quantity'))['total'] or 0
 
             total_revenue = order_items.aggregate(
-                revenue=Sum(F('quantity') * F('product_variant__discounted_price'))
+                revenue=Sum(F('quantity') * F('price'))
             )['revenue'] or 0
 
             avg_order_value = total_revenue / total_orders if total_orders > 0 else 0
@@ -113,7 +113,7 @@ class SalesReportView(APIView):
                     variant_id=F('product_variant__id'),
                     variant_quantity=F('product_variant__quantity'),
                     unit=F('product_variant__unit'),
-                    price=F('product_variant__price'),
+                    catalog_price=F('product_variant__price'),
                     discounted_price=F('product_variant__discounted_price'),
                 )
                 .annotate(total_quantity_sold=Sum('quantity'))
@@ -130,7 +130,7 @@ class SalesReportView(APIView):
                     variant_id=F('product_variant__id'),
                     variant_quantity=F('product_variant__quantity'),
                     unit=F('product_variant__unit'),
-                    price=F('product_variant__price'),
+                    catalog_price=F('product_variant__price'),
                     discounted_price=F('product_variant__discounted_price'),
                 )
                 .annotate(total_quantity_sold=Sum('quantity'))
