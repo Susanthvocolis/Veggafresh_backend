@@ -49,14 +49,25 @@ class InitiatePhonePePayment(APIView):
 
         # 1. Create Order
         initial_status, _ = OrderStatus.objects.get_or_create(name="Initiated")
-        order = Order.objects.create(user=user, status=initial_status, address=address)
+        order = Order.objects.create(
+            user=user, 
+            status=initial_status, 
+            address=address,
+            total_amount=cart.total_amount,
+            taxes=cart.taxes,
+            handling_charges=cart.handling_charges,
+            delivery_charges=cart.delivery_charges,
+            final_amount=cart.final_amount
+        )
 
         # Create OrderItems from CartItems
         for item in cart.items.all():
+            price_to_save = item.product_variant.discounted_price if item.product_variant.discounted_price > 0 else item.product_variant.price
             OrderItem.objects.create(
                 order=order,
                 product_variant=item.product_variant,
-                quantity=item.quantity
+                quantity=item.quantity,
+                price=price_to_save
             )
 
         # 2. Calculate total amount
@@ -170,13 +181,25 @@ class CodOrderCreateView(APIView):
 
         # Create order
         pending_status, _ = OrderStatus.objects.get_or_create(name="Pending")
-        order = Order.objects.create(user=user, status=pending_status, payment_method='cod', address=address)
+        order = Order.objects.create(
+            user=user, 
+            status=pending_status, 
+            payment_method='cod', 
+            address=address,
+            total_amount=cart.total_amount,
+            taxes=cart.taxes,
+            handling_charges=cart.handling_charges,
+            delivery_charges=cart.delivery_charges,
+            final_amount=cart.final_amount
+        )
 
         for item in cart.items.all():
+            price_to_save = item.product_variant.discounted_price if item.product_variant.discounted_price > 0 else item.product_variant.price
             OrderItem.objects.create(
                 order=order,
                 product_variant=item.product_variant,
-                quantity=item.quantity
+                quantity=item.quantity,
+                price=price_to_save
             )
 
         total_amount = order.final_amount
