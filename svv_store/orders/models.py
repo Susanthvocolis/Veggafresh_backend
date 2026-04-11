@@ -48,6 +48,12 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     order_id = models.CharField(max_length=20, unique=True, blank=True)
 
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    taxes = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    handling_charges = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    delivery_charges = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    final_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+
     def save(self, *args, **kwargs):
         if not self.order_id:
             today = timezone.now().date()
@@ -65,12 +71,6 @@ class Order(models.Model):
     def __str__(self):
         return f"Order #{self.order_id} - {self.user.email if self.user else 'Unknown'}"
 
-    @property
-    def final_amount(self):
-        total = 0
-        for item in self.items.all():
-            total += item.product_variant.price * item.quantity  # Ensure `price` exists in ProductVariant
-        return total
     class Meta:
         db_table = 'order'
         indexes = [
@@ -83,6 +83,7 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     def __str__(self):
         return f"{self.product_variant} x {self.quantity}"

@@ -36,7 +36,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     product_variant = serializers.StringRelatedField()
     product_name = serializers.CharField(source='product_variant.product.name', read_only=True)
     product_image = serializers.SerializerMethodField()
-    price = serializers.DecimalField(source='product_variant.price', max_digits=10, decimal_places=2, read_only=True)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     discounted_price = serializers.DecimalField(source='product_variant.discounted_price', max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
@@ -68,7 +68,8 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'user', 'status', 'order_id', 'payment_method', 'tracking_link',
-            'delivery_person', 'created_at', 'items', 'address', 'final_amount',
+            'delivery_person', 'created_at', 'items', 'address', 
+            'total_amount', 'taxes', 'handling_charges', 'delivery_charges', 'final_amount',
             'payment_status', 'payment_amount'
         ]
 
@@ -100,7 +101,7 @@ class AdminOrderItemSerializer(serializers.ModelSerializer):
     product_variant_id = serializers.IntegerField(source='product_variant.id', read_only=True)
     product_variant = serializers.StringRelatedField()
     product_name = serializers.CharField(source='product_variant.product.name', read_only=True)
-    price = serializers.DecimalField(source='product_variant.price', max_digits=10, decimal_places=2, read_only=True)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     discounted_price = serializers.DecimalField(source='product_variant.discounted_price', max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
@@ -123,7 +124,8 @@ class AdminOrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'user', 'status', 'order_id', 'payment_method', 'tracking_link',
-            'delivery_person', 'created_at', 'items', 'address', 'final_amount',
+            'delivery_person', 'created_at', 'items', 'address', 
+            'total_amount', 'taxes', 'handling_charges', 'delivery_charges', 'final_amount',
             'payment_status', 'payment_amount'
         ]
 
