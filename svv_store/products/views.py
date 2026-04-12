@@ -21,7 +21,8 @@ class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsSuperAdminOrHasProductPermission]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
+    search_fields = ['name', 'brand', 'slug', 'category__name', 'subcategory__name']
     ordering_fields = ['name', 'brand', 'created_at', 'category__name', 'subcategory__name']
     ordering = ['-created_at']
 

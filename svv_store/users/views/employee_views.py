@@ -12,7 +12,8 @@ class EmployeeListView(generics.ListAPIView):
     queryset = User.objects.filter(role=User.Role.ADMIN)
     serializer_class = EmployeeSerializer
     permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
+    search_fields = ['first_name', 'last_name', 'email', 'mobile']
     ordering_fields = ['first_name', 'last_name', 'email', 'date_joined']
     ordering = ['-date_joined']
 
@@ -20,7 +21,8 @@ class UsersListView(generics.ListAPIView):
     queryset = User.objects.filter(role=User.Role.USER)
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
+    search_fields = ['first_name', 'last_name', 'email', 'mobile']
     ordering_fields = ['first_name', 'last_name', 'email', 'date_joined']
     ordering = ['-date_joined']
 
