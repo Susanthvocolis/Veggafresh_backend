@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status, filters
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 
 from categories.permissions import IsSuperAdminOrHasCategoryPermission
@@ -10,9 +11,11 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter, DjangoFilterBackend]
     ordering_fields = ['name', 'created_at']
     ordering = ['-created_at']
+    search_fields = ['name', 'slug']
+    filterset_fields = ['is_active']
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method
@@ -49,9 +52,11 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
     queryset = SubCategory.objects.all()
     serializer_class = SubCategorySerializer
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter, DjangoFilterBackend]
     ordering_fields = ['name', 'category__name', 'created_at']
     ordering = ['-created_at']
+    search_fields = ['name', 'slug', 'category__name']
+    filterset_fields = ['category', 'is_active']
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method
