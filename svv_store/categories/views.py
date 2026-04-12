@@ -10,9 +10,10 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
     ordering_fields = ['name', 'created_at']
     ordering = ['-created_at']
+    search_fields = ['name', 'slug']
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method
@@ -49,9 +50,10 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
     queryset = SubCategory.objects.all()
     serializer_class = SubCategorySerializer
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
     ordering_fields = ['name', 'category__name', 'created_at']
     ordering = ['-created_at']
+    search_fields = ['name', 'slug', 'category__name']
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method
