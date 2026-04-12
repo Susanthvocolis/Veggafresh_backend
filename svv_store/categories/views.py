@@ -13,9 +13,16 @@ class CategoryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
     filter_backends = [filters.OrderingFilter, filters.SearchFilter, DjangoFilterBackend]
     ordering_fields = ['name', 'created_at']
-    ordering = ['-created_at']
     search_fields = ['name', 'slug']
     filterset_fields = ['is_active']
+    ordering = ['name']  # Default alphabetical for categories
+
+    @property
+    def pagination_class(self):
+        # Disable pagination if dropdown=true is passed in query params
+        if self.request.query_params.get('dropdown') == 'true':
+            return None
+        return super().pagination_class
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method
@@ -54,9 +61,16 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsSuperAdminOrHasCategoryPermission]
     filter_backends = [filters.OrderingFilter, filters.SearchFilter, DjangoFilterBackend]
     ordering_fields = ['name', 'category__name', 'created_at']
-    ordering = ['-created_at']
     search_fields = ['name', 'slug', 'category__name']
     filterset_fields = ['category', 'is_active']
+    ordering = ['name']  # Default alphabetical for subcategories
+
+    @property
+    def pagination_class(self):
+        # Disable pagination if dropdown=true is passed in query params
+        if self.request.query_params.get('dropdown') == 'true':
+            return None
+        return super().pagination_class
 
     def perform_create(self, serializer):
         # Pass the current user to the model's save method
