@@ -28,14 +28,14 @@ class AdminFilterOrderViewSet(viewsets.ModelViewSet):
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = OrderFilter
-    search_fields = ['order_id', 'status__name']
+    search_fields = ['order_id', 'status__name', 'user__first_name', 'user__last_name', 'user__mobile', 'address__full_name', 'address__mobile']
     ordering_fields = ['created_at']
     ordering = ['-created_at']  # Default: newest orders first
 class GetAllOrderViewSet(viewsets.ViewSet):
     permission_classes = [IsSuperAdminOrHasOrderPermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = OrderFilter  # This ties the filter class to your viewset
-    search_fields = ['order_id', 'status__name']  # Add any additional search fields here
+    search_fields = ['order_id', 'status__name', 'user__first_name', 'user__last_name', 'user__mobile', 'address__full_name', 'address__mobile']  # Add any additional search fields here
     ordering_fields = ['created_at']
     ordering = ['-created_at']  # Default: newest orders first
 
@@ -98,7 +98,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = OrderFilter
-    search_fields = ['order_id', 'status__name']
+    search_fields = ['order_id', 'status__name', 'user__first_name', 'user__last_name', 'user__mobile', 'address__full_name', 'address__mobile']
     ordering_fields = ['created_at', 'payment_method']
     ordering = ['-created_at']
 
@@ -272,7 +272,8 @@ class DeliveryPersonViewSet(viewsets.ModelViewSet):
     queryset = DeliveryPerson.objects.all()
     serializer_class = DeliveryPersonSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
+    search_fields = ['name', 'mobile']
     ordering_fields = ['name', 'mobile']
     ordering = ['name']
 
