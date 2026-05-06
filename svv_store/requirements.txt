@@ -11,6 +11,7 @@ reportlab
 twilio
 psycopg2-binary
 django-ckeditor
+razorpay
 
 --index-url https://phonepe.mycloudrepo.io/public/repositories/phonepe-pg-sdk-python
 --extra-index-url https://pypi.org/simple

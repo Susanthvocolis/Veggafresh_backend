@@ -116,6 +116,12 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PAGINATION_CLASS': 'utils.pagination.CustomPageNumberPagination',
+    'DEFAULT_PARSER_CLASSES': (
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
+        'utils.parsers.PlainTextJSONParser',  # Accept text/plain with JSON body
+    ),
 }
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -227,6 +233,12 @@ PHONEPE_CONFIG = {
     'CLIENT_SECRET': os.getenv('PHONEPE_CLIENT_SECRET'),
     'BASE_URL': os.getenv('PHONEPE_BASE_URL'),
     'REDIRECT_URL': os.getenv('PHONEPE_REDIRECT_URL'),
+}
+
+RAZORPAY_CONFIG = {
+    'KEY_ID': os.getenv('RAZORPAY_KEY_ID', ''),
+    'KEY_SECRET': os.getenv('RAZORPAY_KEY_SECRET', ''),
+    'WEBHOOK_SECRET': os.getenv('RAZORPAY_WEBHOOK_SECRET', ''),
 }
 
 # settings.py
