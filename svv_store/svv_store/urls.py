@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/v1/', include('cart.urls')),
     path('api/v1/', include('address.urls')),
     path('api/v1/', include('wishlist.urls')),
+    path('api/v1/', include('banners.urls')),
     path('download/', SecureFileDownloadView.as_view(), name='secure_download'),
 ]
 # Add this at the end of the file, outside of urlpatterns

@@ -92,5 +92,11 @@ class ModulePermission(models.Model):
     can_update_users = models.BooleanField(default=False)
     can_delete_users = models.BooleanField(default=False)
 
+    # Banners & promotions
+    can_add_banner = models.BooleanField(default=False)
+    can_view_banner = models.BooleanField(default=False)
+    can_edit_banner = models.BooleanField(default=False)
+    can_delete_banner = models.BooleanField(default=False)
+
     class Meta:
         db_table = 'module_permission'
