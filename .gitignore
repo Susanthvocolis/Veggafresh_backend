@@ -4,3 +4,10 @@
 __pycache__/
 *.pyc
 venv
+
+# AI files
+GEMINI.md
+
+# Virtual environments
+.venv/
+svv_store/.venv/
