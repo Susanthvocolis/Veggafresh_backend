@@ -4,7 +4,10 @@ import uuid
 
 import razorpay
 from decimal import Decimal
+from urllib.parse import urlencode
 
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.db import transaction
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -53,10 +56,72 @@ def _verify_webhook_signature(payload_body: bytes, signature_header: str) -> boo
     return hmac.compare_digest(expected_signature, signature_header)
 
 
+def _verify_payment_link_signature(payment_link_id: str, reference_id: str, payment_link_status: str,
+                                   payment_id: str, signature: str) -> bool:
+    secret = settings.RAZORPAY_CONFIG['KEY_SECRET'].encode('utf-8')
+    body = f"{payment_link_id}|{reference_id}|{payment_link_status}|{payment_id}".encode('utf-8')
+    expected_signature = hmac.new(secret, body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected_signature, signature)
+
+
+def _configured_redirect_url(kind: str, order_id: str = '', extra: dict = None) -> str:
+    base_url = settings.RAZORPAY_CONFIG.get(kind, '')
+    if not base_url:
+        return ''
+
+    query = {'order_id': order_id} if order_id else {}
+    if extra:
+        query.update({key: value for key, value in extra.items() if value not in (None, '')})
+
+    separator = '&' if '?' in base_url else '?'
+    return f"{base_url}{separator}{urlencode(query)}" if query else base_url
+
+
+def _build_backend_callback_url(request, url_name: str) -> str:
+    callback_base_url = settings.RAZORPAY_CONFIG.get('CALLBACK_BASE_URL', '').rstrip('/')
+    path = reverse(url_name)
+    if callback_base_url:
+        return f"{callback_base_url}{path}"
+    return request.build_absolute_uri(path)
+
+
+def _find_razorpay_payment(payment_link_id: str = '', razorpay_order_id: str = '', reference_id: str = '',
+                           notes: dict = None):
+    notes = notes or {}
+    order_id = reference_id or notes.get('order_id') or notes.get('merchant_order_id')
+
+    if payment_link_id:
+        try:
+            return Payment.objects.select_related('order', 'order__user').get(
+                razorpay_order_id=payment_link_id
+            )
+        except Payment.DoesNotExist:
+            pass
+
+    if razorpay_order_id:
+        try:
+            return Payment.objects.select_related('order', 'order__user').get(
+                razorpay_order_id=razorpay_order_id
+            )
+        except Payment.DoesNotExist:
+            pass
+
+    if order_id:
+        try:
+            return Payment.objects.select_related('order', 'order__user').get(
+                order__order_id=order_id,
+                payment_gateway='razorpay',
+            )
+        except Payment.DoesNotExist:
+            pass
+
+    return None
+
+
 def _complete_order_payment(order: Order, payment: Payment, razorpay_payment_id: str,
                             razorpay_signature: str = None, razorpay_response: dict = None):
     """
-    Central helper: mark order Completed, update payment record, clear cart, send SMS.
+    Central helper: mark payment Completed, move order to Placed, clear cart, send SMS.
     Called by both /verify/ and /webhook/ to ensure identical behaviour.
     Idempotent — safe to call multiple times for the same order.
     """
@@ -73,9 +138,9 @@ def _complete_order_payment(order: Order, payment: Payment, razorpay_payment_id:
             payment.razorpay_response = razorpay_response
         payment.save()
 
-        # Update Order status
-        completed_status, _ = OrderStatus.objects.get_or_create(name='Completed')
-        order.status = completed_status
+        # Payment is complete; fulfillment/delivery is still pending.
+        placed_status, _ = OrderStatus.objects.get_or_create(name='Placed')
+        order.status = placed_status
         order.save()
 
         # Clear cart
@@ -194,23 +259,41 @@ class InitiateRazorpayPayment(APIView):
                     price=price_to_save,
                 )
 
-        # --- Create Razorpay order ---
+        # --- Create Razorpay hosted checkout link ---
         final_amount = Decimal(cart_details['final_amount'])
         amount_paise = int(final_amount * 100)  # Razorpay expects amount in paise
+        customer_details = {
+            "name": f"{user.first_name or ''} {user.last_name or ''}".strip() or "Customer",
+        }
+        if user.email:
+            customer_details["email"] = user.email
+        if user.mobile:
+            customer_details["contact"] = str(user.mobile)
 
         try:
             client = _get_razorpay_client()
-            rz_order = client.order.create({
+            payment_link = client.payment_link.create({
                 "amount": amount_paise,
                 "currency": "INR",
-                "receipt": str(order.order_id),
-                "payment_capture": 1,  # Auto-capture on payment
+                "accept_partial": False,
+                "reference_id": str(order.order_id),
+                "description": f"Vegga Fresh Order {order.order_id}",
+                "customer": customer_details,
+                "notify": {
+                    "sms": False,
+                    "email": False,
+                },
+                "callback_url": _build_backend_callback_url(request, 'razorpay-success'),
+                "callback_method": "get",
+                "notes": {
+                    "order_id": str(order.order_id),
+                    "user_id": str(user.id),
+                },
             })
         except Exception as e:
-            # Roll back the DB order if Razorpay call fails
             order.delete()
             return Response(
-                {"error": f"Failed to create Razorpay order: {str(e)}"},
+                {"error": f"Failed to create Razorpay checkout link: {str(e)}"},
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
@@ -223,20 +306,190 @@ class InitiateRazorpayPayment(APIView):
             amount=final_amount,
             status='Pending',
             payment_gateway='razorpay',
-            razorpay_order_id=rz_order['id'],
+            razorpay_order_id=payment_link['id'],
+            razorpay_response=payment_link,
         )
 
         return Response({
-            "message": "Razorpay order created successfully.",
+            "message": "Razorpay checkout link created successfully.",
             "order_id": order.order_id,
-            "razorpay_order_id": rz_order['id'],
-            "key_id": settings.RAZORPAY_CONFIG['KEY_ID'],
-            "amount": amount_paise,
-            "currency": "INR",
-            "user_name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
-            "user_email": user.email or '',
-            "user_mobile": str(user.mobile) if user.mobile else '',
+            "checkout_url": payment_link['short_url'],
+            "payment_link_id": payment_link['id'],
         }, status=status.HTTP_201_CREATED)
+
+
+class RazorpayPaymentSuccessRedirectView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        payment_id = request.query_params.get('razorpay_payment_id', '')
+        payment_link_id = request.query_params.get('razorpay_payment_link_id', '')
+        reference_id = request.query_params.get('razorpay_payment_link_reference_id', '')
+        payment_link_status = request.query_params.get('razorpay_payment_link_status', '')
+        signature = request.query_params.get('razorpay_signature', '')
+
+        if not all([payment_id, payment_link_id, reference_id, payment_link_status, signature]):
+            failed_url = _configured_redirect_url(
+                'FAILED_REDIRECT_URL',
+                reference_id,
+                {'reason': 'missing_callback_fields'},
+            )
+            return redirect(failed_url) if failed_url else Response(
+                {"error": "Missing Razorpay callback fields."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not _verify_payment_link_signature(
+            payment_link_id=payment_link_id,
+            reference_id=reference_id,
+            payment_link_status=payment_link_status,
+            payment_id=payment_id,
+            signature=signature,
+        ):
+            failed_url = _configured_redirect_url(
+                'FAILED_REDIRECT_URL',
+                reference_id,
+                {'reason': 'invalid_signature'},
+            )
+            return redirect(failed_url) if failed_url else Response(
+                {"error": "Invalid Razorpay callback signature."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payment = _find_razorpay_payment(payment_link_id=payment_link_id, reference_id=reference_id)
+        if not payment:
+            failed_url = _configured_redirect_url(
+                'FAILED_REDIRECT_URL',
+                reference_id,
+                {'reason': 'payment_not_found'},
+            )
+            return redirect(failed_url) if failed_url else Response(
+                {"error": "Payment record not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if payment_link_status == 'paid':
+            _complete_order_payment(
+                order=payment.order,
+                payment=payment,
+                razorpay_payment_id=payment_id,
+                razorpay_signature=signature,
+                razorpay_response=dict(request.query_params),
+            )
+            success_url = _configured_redirect_url('SUCCESS_REDIRECT_URL', payment.order.order_id)
+            return redirect(success_url) if success_url else Response(
+                {"message": "Payment successful.", "order_id": payment.order.order_id},
+                status=status.HTTP_200_OK,
+            )
+
+        _fail_order_payment(
+            order=payment.order,
+            payment=payment,
+            razorpay_response=dict(request.query_params),
+        )
+        failed_url = _configured_redirect_url(
+            'FAILED_REDIRECT_URL',
+            payment.order.order_id,
+            {'status': payment_link_status},
+        )
+        return redirect(failed_url) if failed_url else Response(
+            {"message": "Payment was not successful.", "order_id": payment.order.order_id},
+            status=status.HTTP_200_OK,
+        )
+
+
+class RazorpayPaymentFailedRedirectView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        order_id = request.query_params.get('order_id', '')
+        failed_url = _configured_redirect_url('FAILED_REDIRECT_URL', order_id)
+        return redirect(failed_url) if failed_url else Response(
+            {"message": "Payment failed.", "order_id": order_id},
+            status=status.HTTP_200_OK,
+        )
+
+
+class RazorpayPaymentInvoiceView(APIView):
+    """
+    Fetch saved Razorpay payment details and latest Razorpay-side payment link data.
+    Use this to confirm whether payment details are saved in our DB.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, order_id):
+        try:
+            payment = Payment.objects.select_related('order', 'order__user').get(
+                order__order_id=order_id,
+                payment_gateway='razorpay',
+            )
+        except Payment.DoesNotExist:
+            return Response(
+                {"error": "Razorpay payment record not found for this order."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        user = request.user
+        can_view = (
+            payment.user_id == user.id
+            or getattr(user, 'is_staff', False)
+            or getattr(user, 'role', '') in ('ADMIN', 'SUPER_ADMIN')
+        )
+        if not can_view:
+            return Response({"error": "You do not have permission to view this payment."}, status=status.HTTP_403_FORBIDDEN)
+
+        razorpay_payment_link = None
+        razorpay_payment = None
+        razorpay_error = None
+
+        try:
+            client = _get_razorpay_client()
+            if payment.razorpay_order_id:
+                razorpay_payment_link = client.payment_link.fetch(payment.razorpay_order_id)
+
+            razorpay_payment_id = payment.razorpay_payment_id
+            if not razorpay_payment_id and razorpay_payment_link:
+                payments = razorpay_payment_link.get('payments') or []
+                if payments:
+                    first_payment = payments[0]
+                    razorpay_payment_id = first_payment.get('payment_id') or first_payment.get('id')
+
+            if razorpay_payment_id:
+                razorpay_payment = client.payment.fetch(razorpay_payment_id)
+                if not payment.razorpay_payment_id:
+                    payment.razorpay_payment_id = razorpay_payment_id
+
+            payment.razorpay_response = {
+                "payment_link": razorpay_payment_link,
+                "payment": razorpay_payment,
+            }
+            payment.save(update_fields=['razorpay_payment_id', 'razorpay_response'])
+        except Exception as e:
+            razorpay_error = str(e)
+
+        return Response({
+            "order_id": payment.order.order_id,
+            "local_payment_saved": True,
+            "local_payment": {
+                "payment_id": payment.payment_id,
+                "amount": str(payment.amount),
+                "payment_status": payment.status,
+                "payment_gateway": payment.payment_gateway,
+                "razorpay_payment_link_id": payment.razorpay_order_id,
+                "razorpay_payment_id": payment.razorpay_payment_id,
+                "saved_razorpay_response": bool(payment.razorpay_response),
+            },
+            "order": {
+                "status": payment.order.status.name if payment.order.status else None,
+            },
+            "razorpay": {
+                "payment_link": razorpay_payment_link,
+                "payment": razorpay_payment,
+                "error": razorpay_error,
+            },
+        }, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
@@ -283,11 +536,8 @@ class RazorpayPaymentVerifyView(APIView):
             )
 
         # --- Fetch Payment record ---
-        try:
-            payment = Payment.objects.select_related('order', 'order__user').get(
-                razorpay_order_id=razorpay_order_id
-            )
-        except Payment.DoesNotExist:
+        payment = _find_razorpay_payment(razorpay_order_id=razorpay_order_id)
+        if not payment:
             return Response(
                 {"error": "Payment record not found for this Razorpay order."},
                 status=status.HTTP_404_NOT_FOUND
@@ -374,6 +624,8 @@ class RazorpayWebhookView(APIView):
         # --- Handle Events ---
         if event == 'payment.captured':
             return self._handle_payment_captured(entity)
+        elif event == 'payment_link.paid':
+            return self._handle_payment_link_paid(entity)
         elif event == 'order.paid':
             return self._handle_order_paid(entity)
         elif event == 'payment.failed':
@@ -387,15 +639,13 @@ class RazorpayWebhookView(APIView):
         payment_entity = entity.get('payment', {}).get('entity', {})
         razorpay_order_id = payment_entity.get('order_id')
         razorpay_payment_id = payment_entity.get('id')
+        notes = payment_entity.get('notes') or {}
 
-        if not razorpay_order_id or not razorpay_payment_id:
-            return Response({"error": "Missing order_id or payment_id in webhook payload."}, status=status.HTTP_400_BAD_REQUEST)
+        if not razorpay_payment_id:
+            return Response({"error": "Missing payment_id in webhook payload."}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            payment = Payment.objects.select_related('order', 'order__user').get(
-                razorpay_order_id=razorpay_order_id
-            )
-        except Payment.DoesNotExist:
+        payment = _find_razorpay_payment(razorpay_order_id=razorpay_order_id, notes=notes)
+        if not payment:
             # Return 200 to prevent Razorpay from retrying — record may not exist for other reasons
             print(f"[Webhook] Payment record not found for razorpay_order_id={razorpay_order_id}")
             return Response({"message": "Payment record not found. Acknowledged."}, status=status.HTTP_200_OK)
@@ -408,6 +658,38 @@ class RazorpayWebhookView(APIView):
         )
 
         return Response({"message": "payment.captured handled successfully."}, status=status.HTTP_200_OK)
+
+    def _handle_payment_link_paid(self, entity: dict):
+        """payment_link.paid: hosted Payment Link was paid."""
+        payment_link_entity = entity.get('payment_link', {}).get('entity', {})
+        payment_entity = entity.get('payment', {}).get('entity', {})
+
+        payment_link_id = payment_link_entity.get('id')
+        reference_id = payment_link_entity.get('reference_id')
+        payments = payment_link_entity.get('payments') or []
+        first_payment = payments[0] if payments else {}
+        razorpay_payment_id = (
+            payment_entity.get('id')
+            or first_payment.get('payment_id')
+            or first_payment.get('id')
+        )
+
+        if not payment_link_id:
+            return Response({"error": "Missing payment_link id in webhook payload."}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment = _find_razorpay_payment(payment_link_id=payment_link_id, reference_id=reference_id)
+        if not payment:
+            print(f"[Webhook] Payment record not found for payment_link_id={payment_link_id}")
+            return Response({"message": "Payment record not found. Acknowledged."}, status=status.HTTP_200_OK)
+
+        _complete_order_payment(
+            order=payment.order,
+            payment=payment,
+            razorpay_payment_id=razorpay_payment_id or payment.razorpay_payment_id or payment_link_id,
+            razorpay_response=payment_link_entity,
+        )
+
+        return Response({"message": "payment_link.paid handled successfully."}, status=status.HTTP_200_OK)
 
     def _handle_order_paid(self, entity: dict):
         """order.paid: fired after payment is captured. Acts as a backup to payment.captured."""
@@ -440,15 +722,10 @@ class RazorpayWebhookView(APIView):
         """payment.failed: payment attempt failed."""
         payment_entity = entity.get('payment', {}).get('entity', {})
         razorpay_order_id = payment_entity.get('order_id')
+        notes = payment_entity.get('notes') or {}
 
-        if not razorpay_order_id:
-            return Response({"error": "Missing order_id in payment.failed payload."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            payment = Payment.objects.select_related('order').get(
-                razorpay_order_id=razorpay_order_id
-            )
-        except Payment.DoesNotExist:
+        payment = _find_razorpay_payment(razorpay_order_id=razorpay_order_id, notes=notes)
+        if not payment:
             print(f"[Webhook] Payment record not found for razorpay_order_id={razorpay_order_id}")
             return Response({"message": "Payment record not found. Acknowledged."}, status=status.HTTP_200_OK)
 

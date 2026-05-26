@@ -1,4 +1,5 @@
 from django.urls import reverse
+from django.http import HttpResponse
 from phonepe.sdk.pg.payments.v2.models.request.standard_checkout_pay_request import StandardCheckoutPayRequest
 from rest_framework import filters
 from rest_framework.permissions import IsAuthenticated
@@ -20,6 +21,7 @@ from orders.models import Order, OrderStatus, OrderItem
 from phonepe.sdk.pg.payments.v2.standard_checkout_client import StandardCheckoutClient
 from phonepe.sdk.pg.env import Env
 from users.services import send_order_placed_sms
+from .invoice_pdf import build_invoice_pdf
 
 class InitiatePhonePePayment(APIView):
     permission_classes = [IsAuthenticated]
@@ -179,11 +181,11 @@ class CodOrderCreateView(APIView):
         if not cart.items.exists():
             return Response({"error": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create order
-        pending_status, _ = OrderStatus.objects.get_or_create(name="Pending")
+        # Create order. COD payment remains Pending until collected.
+        placed_status, _ = OrderStatus.objects.get_or_create(name="Placed")
         order = Order.objects.create(
             user=user, 
-            status=pending_status, 
+            status=placed_status,
             payment_method='cod', 
             address=address,
             total_amount=cart.total_amount or Decimal('0.00'),
@@ -235,6 +237,7 @@ class CodOrderCreateView(APIView):
             "payment_id": payment.payment_id,
             "amount": str(total_amount),
             "payment_status": payment.status,
+            "order_status": order.status.name if order.status else None,
         }, status=status.HTTP_201_CREATED)
 
 
@@ -268,6 +271,40 @@ class CodCollectView(APIView):
             "amount": str(payment.amount),
             "payment_status": payment.status,
         }, status=status.HTTP_200_OK)
+
+
+class InvoicePdfDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, order_id):
+        user = request.user
+        is_admin = (
+            getattr(user, 'is_staff', False)
+            or getattr(user, 'role', '') in ('ADMIN', 'SUPER_ADMIN')
+        )
+        order_queryset = (
+            Order.objects
+            .select_related('status', 'user', 'address')
+            .prefetch_related('items__product_variant__product')
+        )
+        if not is_admin:
+            order_queryset = order_queryset.filter(user=user)
+
+        try:
+            order = order_queryset.get(order_id=order_id)
+        except Order.DoesNotExist:
+            return Response({"error": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            payment = Payment.objects.get(order=order)
+        except Payment.DoesNotExist:
+            return Response({"error": "Payment record not found for this order."}, status=status.HTTP_404_NOT_FOUND)
+
+        pdf_bytes = build_invoice_pdf(order, payment)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="vegga-fresh-invoice-{order.order_id}.pdf"'
+        response['Content-Length'] = str(len(pdf_bytes))
+        return response
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
