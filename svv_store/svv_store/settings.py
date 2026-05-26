@@ -240,6 +240,9 @@ RAZORPAY_CONFIG = {
     'KEY_ID': os.getenv('RAZORPAY_KEY_ID', ''),
     'KEY_SECRET': os.getenv('RAZORPAY_KEY_SECRET', ''),
     'WEBHOOK_SECRET': os.getenv('RAZORPAY_WEBHOOK_SECRET', ''),
+    'SUCCESS_REDIRECT_URL': os.getenv('RAZORPAY_SUCCESS_REDIRECT_URL', ''),
+    'FAILED_REDIRECT_URL': os.getenv('RAZORPAY_FAILED_REDIRECT_URL', ''),
+    'CALLBACK_BASE_URL': os.getenv('RAZORPAY_CALLBACK_BASE_URL', ''),
 }
 
 # settings.py

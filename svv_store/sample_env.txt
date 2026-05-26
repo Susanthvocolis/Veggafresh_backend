@@ -23,3 +23,11 @@ SMS_ORDER_TPID=1707177511187847197
 # Out for Delivery SMS
 SMS_DELIVERY_ENTITYID=1701177502756057485
 SMS_DELIVERY_TPID=1707177511187847197
+
+# Razorpay hosted checkout
+RAZORPAY_KEY_ID=your_key_id
+RAZORPAY_KEY_SECRET=your_key_secret
+RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+RAZORPAY_CALLBACK_BASE_URL=https://api.yourdomain.com
+RAZORPAY_SUCCESS_REDIRECT_URL=https://your-frontend.com/payment/success
+RAZORPAY_FAILED_REDIRECT_URL=https://your-frontend.com/payment/failed
