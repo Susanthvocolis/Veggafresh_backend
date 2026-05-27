@@ -1,11 +1,12 @@
 from django.db import models as django_models
 from django.utils import timezone
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, generics
+from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Banner
 from .permissions import IsSuperAdminOrHasBannerPermission
-from .serializers import BannerSerializer
+from .serializers import BannerSerializer, PublicBannerSerializer
 
 
 def active_schedule_filter(queryset):
@@ -52,3 +53,22 @@ class BannerViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+
+class UserBannerAPIView(generics.ListAPIView):
+    """
+    Public storefront banner feed.
+
+    Query params:
+      ?banner_type=hero|offer|category|app_promo
+    """
+    serializer_class = PublicBannerSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = active_schedule_filter(Banner.objects.all())
+        banner_type = self.request.query_params.get('banner_type')
+        if banner_type:
+            qs = qs.filter(banner_type=banner_type)
+        return qs.order_by('position', '-created_at')

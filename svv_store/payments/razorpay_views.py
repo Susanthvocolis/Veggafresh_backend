@@ -6,7 +6,7 @@ import razorpay
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from django.shortcuts import redirect
+from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.db import transaction
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
@@ -27,6 +27,10 @@ from .models import Payment
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+class RazorpayAppRedirectResponse(HttpResponseRedirect):
+    allowed_schemes = [*HttpResponseRedirect.allowed_schemes, 'veggafresh']
+
 
 def _get_razorpay_client():
     """Return an authenticated Razorpay client."""
@@ -75,6 +79,10 @@ def _configured_redirect_url(kind: str, order_id: str = '', extra: dict = None) 
 
     separator = '&' if '?' in base_url else '?'
     return f"{base_url}{separator}{urlencode(query)}" if query else base_url
+
+
+def _razorpay_redirect(url: str):
+    return RazorpayAppRedirectResponse(url)
 
 
 def _build_backend_callback_url(request, url_name: str) -> str:
@@ -263,12 +271,12 @@ class InitiateRazorpayPayment(APIView):
         final_amount = Decimal(cart_details['final_amount'])
         amount_paise = int(final_amount * 100)  # Razorpay expects amount in paise
         customer_details = {
-            "name": f"{user.first_name or ''} {user.last_name or ''}".strip() or "Customer",
+            "name": address.full_name or f"{user.first_name or ''} {user.last_name or ''}".strip() or "Customer",
         }
         if user.email:
             customer_details["email"] = user.email
-        if user.mobile:
-            customer_details["contact"] = str(user.mobile)
+        if address.mobile or user.mobile:
+            customer_details["contact"] = str(address.mobile or user.mobile)
 
         try:
             client = _get_razorpay_client()
@@ -335,7 +343,7 @@ class RazorpayPaymentSuccessRedirectView(APIView):
                 reference_id,
                 {'reason': 'missing_callback_fields'},
             )
-            return redirect(failed_url) if failed_url else Response(
+            return _razorpay_redirect(failed_url) if failed_url else Response(
                 {"error": "Missing Razorpay callback fields."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -352,7 +360,7 @@ class RazorpayPaymentSuccessRedirectView(APIView):
                 reference_id,
                 {'reason': 'invalid_signature'},
             )
-            return redirect(failed_url) if failed_url else Response(
+            return _razorpay_redirect(failed_url) if failed_url else Response(
                 {"error": "Invalid Razorpay callback signature."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -364,7 +372,7 @@ class RazorpayPaymentSuccessRedirectView(APIView):
                 reference_id,
                 {'reason': 'payment_not_found'},
             )
-            return redirect(failed_url) if failed_url else Response(
+            return _razorpay_redirect(failed_url) if failed_url else Response(
                 {"error": "Payment record not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
@@ -378,7 +386,7 @@ class RazorpayPaymentSuccessRedirectView(APIView):
                 razorpay_response=dict(request.query_params),
             )
             success_url = _configured_redirect_url('SUCCESS_REDIRECT_URL', payment.order.order_id)
-            return redirect(success_url) if success_url else Response(
+            return _razorpay_redirect(success_url) if success_url else Response(
                 {"message": "Payment successful.", "order_id": payment.order.order_id},
                 status=status.HTTP_200_OK,
             )
@@ -393,7 +401,7 @@ class RazorpayPaymentSuccessRedirectView(APIView):
             payment.order.order_id,
             {'status': payment_link_status},
         )
-        return redirect(failed_url) if failed_url else Response(
+        return _razorpay_redirect(failed_url) if failed_url else Response(
             {"message": "Payment was not successful.", "order_id": payment.order.order_id},
             status=status.HTTP_200_OK,
         )
@@ -406,7 +414,7 @@ class RazorpayPaymentFailedRedirectView(APIView):
     def get(self, request):
         order_id = request.query_params.get('order_id', '')
         failed_url = _configured_redirect_url('FAILED_REDIRECT_URL', order_id)
-        return redirect(failed_url) if failed_url else Response(
+        return _razorpay_redirect(failed_url) if failed_url else Response(
             {"message": "Payment failed.", "order_id": order_id},
             status=status.HTTP_200_OK,
         )
