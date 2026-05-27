@@ -26,3 +26,12 @@ class BannerSerializer(serializers.ModelSerializer):
         if obj.updated_by:
             return obj.updated_by.get_full_name() or obj.updated_by.email
         return None
+
+
+class PublicBannerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Banner
+        fields = [
+            'id', 'title', 'subtitle', 'image', 'mobile_image',
+            'link_url', 'banner_type', 'position',
+        ]

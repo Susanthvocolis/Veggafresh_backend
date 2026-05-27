@@ -74,6 +74,10 @@ AUTHENTICATION_BACKENDS = [
 ]
 ROOT_URLCONF = 'svv_store.urls'
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+]
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -250,6 +254,8 @@ RAZORPAY_CONFIG = {
 CSRF_TRUSTED_ORIGINS = [
     "https://admin.veggafresh.com",
     "https://veggafresh.com",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
 ]
 
 CSRF_COOKIE_SECURE = True
