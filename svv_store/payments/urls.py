@@ -10,6 +10,7 @@ from .views import (
 )
 from .razorpay_views import (
     InitiateRazorpayPayment,
+    InitiateRazorpayMobilePayment,
     RazorpayPaymentInvoiceView,
     RazorpayPaymentFailedRedirectView,
     RazorpayPaymentSuccessRedirectView,
@@ -34,6 +35,8 @@ urlpatterns = [
 
     # ---- Razorpay (new) ----
     path('payment/razorpay/create/', InitiateRazorpayPayment.as_view(), name='razorpay-create'),
+    path('payment/razorpay/mobile/create/', InitiateRazorpayMobilePayment.as_view(), name='razorpay-mobile-create'),
+    path('payment/razorpay/mobile/verify/', RazorpayPaymentVerifyView.as_view(), name='razorpay-mobile-verify'),
     path('payment/razorpay/success/', RazorpayPaymentSuccessRedirectView.as_view(), name='razorpay-success'),
     path('payment/razorpay/failed/', RazorpayPaymentFailedRedirectView.as_view(), name='razorpay-failed'),
     path('payment/razorpay/<str:order_id>/invoice/', RazorpayPaymentInvoiceView.as_view(), name='razorpay-invoice'),
