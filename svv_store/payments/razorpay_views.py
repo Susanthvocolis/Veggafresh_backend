@@ -326,6 +326,149 @@ class InitiateRazorpayPayment(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class InitiateRazorpayMobilePayment(APIView):
+    """
+    Mobile app Razorpay flow.
+
+    This creates a Razorpay Order, not a hosted Payment Link. The mobile app
+    should pass the returned checkout_options into Razorpay's Android/iOS/
+    React Native/Flutter SDK so checkout opens inside the app.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        address_id = request.data.get('address_id')
+        if not address_id:
+            return Response(
+                {"error": "address_id is required to place an order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            address = Address.objects.get(id=address_id, user=user)
+        except Address.DoesNotExist:
+            return Response(
+                {"error": "Address not found. Please add a delivery address."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            cart = Cart.objects.get(user=user)
+        except Cart.DoesNotExist:
+            return Response({"error": "Cart does not exist."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not cart.items.exists():
+            return Response({"error": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cart.calculate_totals()
+        final_amount = cart.final_amount or Decimal('0.00')
+        if final_amount <= 0:
+            return Response({"error": "Cart amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            initial_status, _ = OrderStatus.objects.get_or_create(name="Initiated")
+            order = Order.objects.create(
+                user=user,
+                status=initial_status,
+                payment_method='online',
+                address=address,
+                total_amount=cart.total_amount or Decimal('0.00'),
+                taxes=cart.taxes or Decimal('0.00'),
+                handling_charges=cart.handling_charges or Decimal('0.00'),
+                delivery_charges=cart.delivery_charges or Decimal('0.00'),
+                final_amount=final_amount,
+            )
+
+            for item in cart.items.select_related('product_variant').all():
+                price_to_save = (
+                    item.product_variant.discounted_price
+                    if item.product_variant.discounted_price > 0
+                    else item.product_variant.price
+                )
+                OrderItem.objects.create(
+                    order=order,
+                    product_variant=item.product_variant,
+                    quantity=item.quantity,
+                    price=price_to_save,
+                )
+
+        amount_paise = int(final_amount * Decimal('100'))
+
+        try:
+            client = _get_razorpay_client()
+            razorpay_order = client.order.create({
+                "amount": amount_paise,
+                "currency": "INR",
+                "receipt": str(order.order_id),
+                "notes": {
+                    "order_id": str(order.order_id),
+                    "user_id": str(user.id),
+                    "source": "mobile_app",
+                },
+            })
+        except Exception as e:
+            order.delete()
+            return Response(
+                {"error": f"Failed to create Razorpay order: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        payment_id = f"RZP-MOB-{order.order_id}-{uuid.uuid4().hex[:6].upper()}"
+        Payment.objects.create(
+            order=order,
+            user=user,
+            payment_id=payment_id,
+            amount=final_amount,
+            status='Pending',
+            payment_gateway='razorpay',
+            razorpay_order_id=razorpay_order['id'],
+            razorpay_response=razorpay_order,
+        )
+
+        customer_name = (
+            address.full_name
+            or f"{user.first_name or ''} {user.last_name or ''}".strip()
+            or "Customer"
+        )
+        customer_contact = str(address.mobile or user.mobile or '')
+
+        checkout_options = {
+            "key": settings.RAZORPAY_CONFIG['KEY_ID'],
+            "amount": amount_paise,
+            "currency": "INR",
+            "name": "Vegga Fresh",
+            "description": f"Order {order.order_id}",
+            "order_id": razorpay_order['id'],
+            "prefill": {
+                "name": customer_name,
+                "email": user.email or "",
+                "contact": customer_contact,
+            },
+            "notes": {
+                "order_id": str(order.order_id),
+                "user_id": str(user.id),
+            },
+            "theme": {
+                "color": "#2E7D32",
+            },
+        }
+
+        return Response({
+            "message": "Razorpay mobile order created successfully.",
+            "order_id": order.order_id,
+            "payment_id": payment_id,
+            "payment_gateway": "razorpay",
+            "razorpay_order_id": razorpay_order['id'],
+            "amount": str(final_amount),
+            "amount_paise": amount_paise,
+            "currency": "INR",
+            "key_id": settings.RAZORPAY_CONFIG['KEY_ID'],
+            "checkout_options": checkout_options,
+        }, status=status.HTTP_201_CREATED)
+
+
 class RazorpayPaymentSuccessRedirectView(APIView):
     authentication_classes = []
     permission_classes = []
