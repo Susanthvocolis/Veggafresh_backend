@@ -36,6 +36,17 @@ class Order(models.Model):
     address = models.ForeignKey('address.Address', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='online')
     tracking_link = models.URLField(blank=True, null=True)
+    delivery_schedule = models.ForeignKey(
+        'delivery.DeliverySchedule',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='orders'
+    )
+    delivery_date = models.DateField(null=True, blank=True)
+    delivery_slot_name = models.CharField(max_length=100, null=True, blank=True)
+    slot_start_time = models.TimeField(null=True, blank=True)
+    slot_end_time = models.TimeField(null=True, blank=True)
 
     delivery_person = models.ForeignKey(
         'DeliveryPerson',
@@ -78,6 +89,8 @@ class Order(models.Model):
             models.Index(fields=['status']),  # Index on 'status' for filtering orders by status
             models.Index(fields=['created_at']),  # Index on 'created_at' for sorting by date
             models.Index(fields=['order_id']),  # Index on 'order_id' for fast lookups
+            models.Index(fields=['delivery_date'], name='order_deliv_59401b_idx'),
+            models.Index(fields=['delivery_schedule'], name='order_deliv_085616_idx'),
         ]
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')

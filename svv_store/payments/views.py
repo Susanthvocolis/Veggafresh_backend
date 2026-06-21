@@ -1,5 +1,6 @@
 from django.urls import reverse
 from django.http import HttpResponse
+from django.db import transaction
 from phonepe.sdk.pg.payments.v2.models.request.standard_checkout_pay_request import StandardCheckoutPayRequest
 from rest_framework import filters
 from rest_framework.permissions import IsAuthenticated
@@ -18,6 +19,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from .models import Payment
 from orders.models import Order, OrderStatus, OrderItem
+from delivery.services import reserve_delivery_slot, release_delivery_schedule
 from phonepe.sdk.pg.payments.v2.standard_checkout_client import StandardCheckoutClient
 from phonepe.sdk.pg.env import Env
 from users.services import send_order_placed_sms
@@ -38,6 +40,13 @@ class InitiatePhonePePayment(APIView):
         except Address.DoesNotExist:
             return Response({"error": "Address not found. Please add a delivery address."}, status=status.HTTP_400_BAD_REQUEST)
 
+        delivery_slot_id = request.data.get('delivery_slot_id')
+        delivery_date = request.data.get('delivery_date')
+        if not delivery_slot_id:
+            return Response({"error": "delivery_slot_id is required to place an order."}, status=status.HTTP_400_BAD_REQUEST)
+        if not delivery_date:
+            return Response({"error": "delivery_date is required to place an order."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             cart = Cart.objects.get(user=user)
         except Cart.DoesNotExist:
@@ -50,27 +59,30 @@ class InitiatePhonePePayment(APIView):
         cart_details = serializer.data
 
         # 1. Create Order
-        initial_status, _ = OrderStatus.objects.get_or_create(name="Initiated")
-        order = Order.objects.create(
-            user=user, 
-            status=initial_status, 
-            address=address,
-            total_amount=cart.total_amount or Decimal('0.00'),
-            taxes=cart.taxes or Decimal('0.00'),
-            handling_charges=cart.handling_charges or Decimal('0.00'),
-            delivery_charges=cart.delivery_charges or Decimal('0.00'),
-            final_amount=cart.final_amount or Decimal('0.00')
-        )
-
-        # Create OrderItems from CartItems
-        for item in cart.items.all():
-            price_to_save = item.product_variant.discounted_price if item.product_variant.discounted_price > 0 else item.product_variant.price
-            OrderItem.objects.create(
-                order=order,
-                product_variant=item.product_variant,
-                quantity=item.quantity,
-                price=price_to_save
+        with transaction.atomic():
+            initial_status, _ = OrderStatus.objects.get_or_create(name="Initiated")
+            schedule, delivery_snapshot = reserve_delivery_slot(delivery_slot_id, delivery_date)
+            order = Order.objects.create(
+                user=user,
+                status=initial_status,
+                address=address,
+                total_amount=cart.total_amount or Decimal('0.00'),
+                taxes=cart.taxes or Decimal('0.00'),
+                handling_charges=cart.handling_charges or Decimal('0.00'),
+                delivery_charges=cart.delivery_charges or Decimal('0.00'),
+                final_amount=cart.final_amount or Decimal('0.00'),
+                **delivery_snapshot,
             )
+
+            # Create OrderItems from CartItems
+            for item in cart.items.all():
+                price_to_save = item.product_variant.discounted_price if item.product_variant.discounted_price > 0 else item.product_variant.price
+                OrderItem.objects.create(
+                    order=order,
+                    product_variant=item.product_variant,
+                    quantity=item.quantity,
+                    price=price_to_save
+                )
 
         # 2. Calculate total amount
         total_amount = Decimal(cart_details['final_amount'])  # Assuming your CartSerializer gives this
@@ -94,7 +106,16 @@ class InitiatePhonePePayment(APIView):
         )
 
         # 5. Send payment request
-        pay_response = client.pay(pay_request)
+        try:
+            pay_response = client.pay(pay_request)
+        except Exception as e:
+            with transaction.atomic():
+                release_delivery_schedule(order.delivery_schedule_id)
+                order.delete()
+            return Response(
+                {"error": f"Failed to initiate PhonePe payment: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
 
         # 6. Clear cart after creating payment request
         cart.items.all().delete()
@@ -135,10 +156,20 @@ class PhonePeCallbackView(APIView):
                 except Cart.DoesNotExist:
                     pass
             else:
-                failed_status, _ = OrderStatus.objects.get_or_create(name="Failed")
-                order.status = failed_status
+                should_release_schedule = not (order.status and order.status.name in ("Cancelled", "Failed"))
+                if should_release_schedule:
+                    with transaction.atomic():
+                        failed_status, _ = OrderStatus.objects.get_or_create(name="Failed")
+                        order.status = failed_status
+                        order.save()
+                        release_delivery_schedule(order.delivery_schedule_id)
+                else:
+                    failed_status, _ = OrderStatus.objects.get_or_create(name="Failed")
+                    order.status = failed_status
+                    order.save()
 
-            order.save()
+            if status_code == "PAYMENT_SUCCESS":
+                order.save()
 
             # Create/Update Payment record
             Payment.objects.update_or_create(
@@ -173,6 +204,13 @@ class CodOrderCreateView(APIView):
         except Address.DoesNotExist:
             return Response({"error": "Address not found. Please add a delivery address."}, status=status.HTTP_400_BAD_REQUEST)
 
+        delivery_slot_id = request.data.get('delivery_slot_id')
+        delivery_date = request.data.get('delivery_date')
+        if not delivery_slot_id:
+            return Response({"error": "delivery_slot_id is required to place an order."}, status=status.HTTP_400_BAD_REQUEST)
+        if not delivery_date:
+            return Response({"error": "delivery_date is required to place an order."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             cart = Cart.objects.get(user=user)
         except Cart.DoesNotExist:
@@ -182,38 +220,41 @@ class CodOrderCreateView(APIView):
             return Response({"error": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create order. COD payment remains Pending until collected.
-        placed_status, _ = OrderStatus.objects.get_or_create(name="Placed")
-        order = Order.objects.create(
-            user=user, 
-            status=placed_status,
-            payment_method='cod', 
-            address=address,
-            total_amount=cart.total_amount or Decimal('0.00'),
-            taxes=cart.taxes or Decimal('0.00'),
-            handling_charges=cart.handling_charges or Decimal('0.00'),
-            delivery_charges=cart.delivery_charges or Decimal('0.00'),
-            final_amount=cart.final_amount or Decimal('0.00')
-        )
-
-        for item in cart.items.all():
-            price_to_save = item.product_variant.discounted_price if item.product_variant.discounted_price > 0 else item.product_variant.price
-            OrderItem.objects.create(
-                order=order,
-                product_variant=item.product_variant,
-                quantity=item.quantity,
-                price=price_to_save
+        with transaction.atomic():
+            placed_status, _ = OrderStatus.objects.get_or_create(name="Placed")
+            schedule, delivery_snapshot = reserve_delivery_slot(delivery_slot_id, delivery_date)
+            order = Order.objects.create(
+                user=user,
+                status=placed_status,
+                payment_method='cod',
+                address=address,
+                total_amount=cart.total_amount or Decimal('0.00'),
+                taxes=cart.taxes or Decimal('0.00'),
+                handling_charges=cart.handling_charges or Decimal('0.00'),
+                delivery_charges=cart.delivery_charges or Decimal('0.00'),
+                final_amount=cart.final_amount or Decimal('0.00'),
+                **delivery_snapshot,
             )
 
-        total_amount = order.final_amount
+            for item in cart.items.all():
+                price_to_save = item.product_variant.discounted_price if item.product_variant.discounted_price > 0 else item.product_variant.price
+                OrderItem.objects.create(
+                    order=order,
+                    product_variant=item.product_variant,
+                    quantity=item.quantity,
+                    price=price_to_save
+                )
 
-        # Create Payment record for COD
-        payment = Payment.objects.create(
-            order=order,
-            user=user,
-            payment_id=f"COD-{order.order_id}",
-            amount=total_amount,
-            status='Pending'
-        )
+            total_amount = order.final_amount
+
+            # Create Payment record for COD
+            payment = Payment.objects.create(
+                order=order,
+                user=user,
+                payment_id=f"COD-{order.order_id}",
+                amount=total_amount,
+                status='Pending'
+            )
 
         # Clear cart
         cart.items.all().delete()
@@ -284,7 +325,7 @@ class InvoicePdfDownloadView(APIView):
         )
         order_queryset = (
             Order.objects
-            .select_related('status', 'user', 'address')
+            .select_related('status', 'user', 'address', 'delivery_schedule')
             .prefetch_related('items__product_variant__product')
         )
         if not is_admin:
