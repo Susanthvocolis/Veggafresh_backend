@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'categories',
     'products',
     'orders',
+    'delivery',
     'payments',
     'cart',
     'address',
@@ -248,6 +249,8 @@ RAZORPAY_CONFIG = {
     'FAILED_REDIRECT_URL': os.getenv('RAZORPAY_FAILED_REDIRECT_URL', ''),
     'CALLBACK_BASE_URL': os.getenv('RAZORPAY_CALLBACK_BASE_URL', ''),
 }
+
+DEFAULT_DELIVERY_SLOT_CAPACITY = int(os.getenv('DEFAULT_DELIVERY_SLOT_CAPACITY', '25'))
 
 # settings.py
 

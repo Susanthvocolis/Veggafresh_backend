@@ -18,6 +18,7 @@ from rest_framework import status
 from address.models import Address
 from cart.models import Cart
 from cart.serializers import CartSerializer
+from delivery.services import reserve_delivery_slot, release_delivery_schedule
 from orders.models import Order, OrderStatus, OrderItem
 from svv_store import settings
 from users.services import send_order_placed_sms
@@ -179,6 +180,7 @@ def _fail_order_payment(order: Order, payment: Payment, razorpay_response: dict 
         return
 
     with transaction.atomic():
+        previous_status_name = order.status.name if order.status else None
         payment.status = 'Failed'
         if razorpay_response:
             payment.razorpay_response = razorpay_response
@@ -187,6 +189,8 @@ def _fail_order_payment(order: Order, payment: Payment, razorpay_response: dict 
         failed_status, _ = OrderStatus.objects.get_or_create(name='Failed')
         order.status = failed_status
         order.save()
+        if previous_status_name not in ("Cancelled", "Failed"):
+            release_delivery_schedule(order.delivery_schedule_id)
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +231,19 @@ class InitiateRazorpayPayment(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        delivery_slot_id = request.data.get('delivery_slot_id')
+        delivery_date = request.data.get('delivery_date')
+        if not delivery_slot_id:
+            return Response(
+                {"error": "delivery_slot_id is required to place an order."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not delivery_date:
+            return Response(
+                {"error": "delivery_date is required to place an order."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # --- Validate cart ---
         try:
             cart = Cart.objects.get(user=user)
@@ -242,6 +259,7 @@ class InitiateRazorpayPayment(APIView):
         # --- Create Order in DB ---
         with transaction.atomic():
             initial_status, _ = OrderStatus.objects.get_or_create(name="Initiated")
+            schedule, delivery_snapshot = reserve_delivery_slot(delivery_slot_id, delivery_date)
             order = Order.objects.create(
                 user=user,
                 status=initial_status,
@@ -252,6 +270,7 @@ class InitiateRazorpayPayment(APIView):
                 handling_charges=cart.handling_charges or Decimal('0.00'),
                 delivery_charges=cart.delivery_charges or Decimal('0.00'),
                 final_amount=cart.final_amount or Decimal('0.00'),
+                **delivery_snapshot,
             )
 
             for item in cart.items.all():
@@ -299,7 +318,9 @@ class InitiateRazorpayPayment(APIView):
                 },
             })
         except Exception as e:
-            order.delete()
+            with transaction.atomic():
+                release_delivery_schedule(order.delivery_schedule_id)
+                order.delete()
             return Response(
                 {"error": f"Failed to create Razorpay checkout link: {str(e)}"},
                 status=status.HTTP_502_BAD_GATEWAY
@@ -354,6 +375,19 @@ class InitiateRazorpayMobilePayment(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        delivery_slot_id = request.data.get('delivery_slot_id')
+        delivery_date = request.data.get('delivery_date')
+        if not delivery_slot_id:
+            return Response(
+                {"error": "delivery_slot_id is required to place an order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not delivery_date:
+            return Response(
+                {"error": "delivery_date is required to place an order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             cart = Cart.objects.get(user=user)
         except Cart.DoesNotExist:
@@ -369,6 +403,7 @@ class InitiateRazorpayMobilePayment(APIView):
 
         with transaction.atomic():
             initial_status, _ = OrderStatus.objects.get_or_create(name="Initiated")
+            schedule, delivery_snapshot = reserve_delivery_slot(delivery_slot_id, delivery_date)
             order = Order.objects.create(
                 user=user,
                 status=initial_status,
@@ -379,6 +414,7 @@ class InitiateRazorpayMobilePayment(APIView):
                 handling_charges=cart.handling_charges or Decimal('0.00'),
                 delivery_charges=cart.delivery_charges or Decimal('0.00'),
                 final_amount=final_amount,
+                **delivery_snapshot,
             )
 
             for item in cart.items.select_related('product_variant').all():
@@ -409,7 +445,9 @@ class InitiateRazorpayMobilePayment(APIView):
                 },
             })
         except Exception as e:
-            order.delete()
+            with transaction.atomic():
+                release_delivery_schedule(order.delivery_schedule_id)
+                order.delete()
             return Response(
                 {"error": f"Failed to create Razorpay order: {str(e)}"},
                 status=status.HTTP_502_BAD_GATEWAY,

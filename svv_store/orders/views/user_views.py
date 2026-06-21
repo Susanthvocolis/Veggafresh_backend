@@ -26,7 +26,7 @@ class MyOrdersView(APIView):
         orders = (
             Order.objects
             .filter(user=request.user)
-            .select_related('status', 'delivery_person', 'address')
+            .select_related('status', 'delivery_person', 'address', 'delivery_schedule')
             .prefetch_related(
                 'items__product_variant__product__images',
                 'payment_set',   # eliminates Payment N+1
@@ -48,7 +48,7 @@ class MyOrderDetailView(APIView):
         try:
             order = (
                 Order.objects
-                .select_related('status', 'delivery_person', 'address')
+                .select_related('status', 'delivery_person', 'address', 'delivery_schedule')
                 .prefetch_related(
                     'items__product_variant__product__images',
                     'payment_set',   # eliminates Payment N+1

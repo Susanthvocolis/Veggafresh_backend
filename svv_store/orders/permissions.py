@@ -23,9 +23,7 @@ class IsSuperAdminOrHasOrderPermission(BasePermission):
 
             # Update status custom action
             if action == 'update_status':
-                # You can return True directly if you already checked each status permission when updating
-                # OR check all update-related permissions (safer):
-                return perms.can_manage_delivery_status
+                return perms.can_manage_orders or perms.can_manage_delivery_status
 
 
             # Delete or update

@@ -1,4 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -10,13 +11,14 @@ from orders.models import Order, OrderStatus, DeliveryPerson
 from orders.permissions import IsSuperAdminOrHasOrderPermission
 from orders.serializers import OrderSerializer, OrderStatusUpdateSerializer, OrderStatusSerializer, \
     DeliveryPersonSerializer, AdminOrderSerializer
+from delivery.services import release_delivery_schedule
 from users.services import send_order_placed_sms, send_out_for_delivery_sms
 from utils.pagination import CustomPageNumberPagination
 
 class AdminFilterOrderViewSet(viewsets.ModelViewSet):
     queryset = (
         Order.objects.all()
-        .select_related('status', 'user', 'delivery_person', 'address')
+        .select_related('status', 'user', 'delivery_person', 'address', 'delivery_schedule')
         .prefetch_related(
             'items__product_variant__product__images',  # order items chain
             'payment_set',                              # eliminates Payment N+1
@@ -45,7 +47,7 @@ class GetAllOrderViewSet(viewsets.ViewSet):
         page_size = int(request.query_params.get('page_size', 100))
 
         # Apply filters (using the same query as in your filterset)
-        queryset = Order.objects.all().select_related('status', 'user', 'delivery_person').order_by('-created_at')
+        queryset = Order.objects.all().select_related('status', 'user', 'delivery_person', 'delivery_schedule').order_by('-created_at')
 
         # Get the filtered count
         total_count = queryset.count()
@@ -106,7 +108,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
         """Build and return the filtered + sorted queryset for the request."""
         queryset = (
             Order.objects.all()
-            .select_related('status', 'user', 'delivery_person', 'address')
+            .select_related('status', 'user', 'delivery_person', 'address', 'delivery_schedule')
             .prefetch_related(
                 'items__product_variant__product__images',
                 'payment_set',
@@ -141,7 +143,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
         try:
             order = (
                 Order.objects
-                .select_related('status', 'user', 'delivery_person', 'address')
+                .select_related('status', 'user', 'delivery_person', 'address', 'delivery_schedule')
                 .prefetch_related(
                     'items__product_variant__product__images',
                     'payment_set',
@@ -154,8 +156,11 @@ class AdminOrderViewSet(viewsets.ViewSet):
             return Response({'message': 'Order not found'}, status=404)
     def destroy(self, request, pk=None):
         try:
-            order = Order.objects.get(pk=pk)
-            order.delete()
+            with transaction.atomic():
+                order = Order.objects.select_for_update().get(pk=pk)
+                if not order.status or order.status.name not in ("Cancelled", "Failed"):
+                    release_delivery_schedule(order.delivery_schedule_id)
+                order.delete()
             return Response({"message": "Order deleted successfully"}, status=204)
         except Order.DoesNotExist:
             return Response({"message": "Order not found"}, status=404)
@@ -165,7 +170,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
         orders = (
             Order.objects
             .filter(status__name__iexact=status_name)
-            .select_related('status', 'user', 'delivery_person', 'address')
+            .select_related('status', 'user', 'delivery_person', 'address', 'delivery_schedule')
             .prefetch_related(
                 'items__product_variant__product__images',
                 'payment_set',
@@ -182,10 +187,14 @@ class AdminOrderViewSet(viewsets.ViewSet):
         except Order.DoesNotExist:
             return Response({'message': 'Order not found'}, status=404)
 
+        previous_status_name = order.status.name if order.status else None
         serializer = OrderStatusUpdateSerializer(order, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
-            order.refresh_from_db()
+            with transaction.atomic():
+                serializer.save()
+                order.refresh_from_db()
+                if order.status and order.status.name in ("Cancelled", "Failed") and previous_status_name not in ("Cancelled", "Failed"):
+                    release_delivery_schedule(order.delivery_schedule_id)
 
             msg_map = {
                 "Accepted": "Order has been accepted.",

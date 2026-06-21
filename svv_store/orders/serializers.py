@@ -1,7 +1,9 @@
 from rest_framework import serializers
+from django.db import transaction
 
 from address.serializers import AddressSerializer
 from payments.models import Payment
+from delivery.services import reserve_delivery_slot
 from .models import Order, OrderItem, OrderStatus, DeliveryPerson
 
 
@@ -13,20 +15,26 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
 
 class OrderCreateSerializer(serializers.ModelSerializer):
     items = OrderItemCreateSerializer(many=True)
+    delivery_slot_id = serializers.IntegerField(write_only=True)
+    delivery_date = serializers.DateField(write_only=True)
 
     class Meta:
         model = Order
-        fields = ['items']
+        fields = ['items', 'delivery_slot_id', 'delivery_date']
 
     def create(self, validated_data):
         user = self.context['request'].user
         items_data = validated_data.pop('items')
+        delivery_slot_id = validated_data.pop('delivery_slot_id')
+        delivery_date = validated_data.pop('delivery_date')
 
         status = OrderStatus.objects.get(name="Pending")
-        order = Order.objects.create(user=user, status=status, **validated_data)
+        with transaction.atomic():
+            schedule, delivery_snapshot = reserve_delivery_slot(delivery_slot_id, delivery_date)
+            order = Order.objects.create(user=user, status=status, **delivery_snapshot, **validated_data)
 
-        for item_data in items_data:
-            OrderItem.objects.create(order=order, **item_data)
+            for item_data in items_data:
+                OrderItem.objects.create(order=order, **item_data)
 
         return order
 
@@ -68,6 +76,8 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'user', 'status', 'order_id', 'payment_method', 'tracking_link',
+            'delivery_schedule_id', 'delivery_date', 'delivery_slot_name',
+            'slot_start_time', 'slot_end_time',
             'delivery_person', 'created_at', 'items', 'address', 
             'total_amount', 'taxes', 'handling_charges', 'delivery_charges', 'final_amount',
             'payment_status', 'payment_amount'
@@ -124,6 +134,8 @@ class AdminOrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'user', 'status', 'order_id', 'payment_method', 'tracking_link',
+            'delivery_schedule_id', 'delivery_date', 'delivery_slot_name',
+            'slot_start_time', 'slot_end_time',
             'delivery_person', 'created_at', 'items', 'address', 
             'total_amount', 'taxes', 'handling_charges', 'delivery_charges', 'final_amount',
             'payment_status', 'payment_amount'
@@ -148,15 +160,17 @@ class AdminOrderSerializer(serializers.ModelSerializer):
 
 
 class OrderStatusUpdateSerializer(serializers.ModelSerializer):
-    status = serializers.PrimaryKeyRelatedField(queryset=OrderStatus.objects.all())
-    # delivery_person = serializers.PrimaryKeyRelatedField(
-    #     queryset=DeliveryPerson.objects.all(), required=False
-    # )
+    status = serializers.PrimaryKeyRelatedField(queryset=OrderStatus.objects.all(), required=False)
+    delivery_person = serializers.PrimaryKeyRelatedField(
+        queryset=DeliveryPerson.objects.all(),
+        required=False,
+        allow_null=True,
+    )
     # tracking_link removed
 
     class Meta:
         model = Order
-        fields = ['status']  # only status is updated
+        fields = ['status', 'delivery_person']
 
 
 class OrderStatusSerializer(serializers.ModelSerializer):
