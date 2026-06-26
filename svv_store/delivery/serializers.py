@@ -3,8 +3,129 @@ from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import serializers
+from django.db import transaction
 
-from .models import DeliverySchedule, DeliverySlot
+from users.models import User
+from .models import DeliveryPerson, DeliverySchedule, DeliverySlot
+
+
+class DeliveryPersonSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='user.first_name')
+    mobile = serializers.CharField(source='user.mobile')
+    email = serializers.EmailField(source='user.email')
+    profile_complete = serializers.BooleanField(source='user.profile_complete', read_only=True)
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+
+    class Meta:
+        model = DeliveryPerson
+        fields = [
+            'id', 'name', 'mobile', 'email', 'vehicle_type', 'vehicle_number',
+            'address', 'status', 'profile_complete', 'is_active',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class DeliveryPersonAdminSerializer(DeliveryPersonSerializer):
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    is_active = serializers.BooleanField(source='user.is_active', required=False)
+
+    class Meta(DeliveryPersonSerializer.Meta):
+        fields = DeliveryPersonSerializer.Meta.fields + ['password']
+
+    def validate(self, attrs):
+        user_data = attrs.get('user', {})
+        if self.instance is None and not attrs.get('password'):
+            raise serializers.ValidationError({'password': 'Password is required.'})
+
+        mobile = user_data.get('mobile')
+        email = user_data.get('email')
+        user_queryset = User.objects.all()
+        if self.instance:
+            user_queryset = user_queryset.exclude(pk=self.instance.user_id)
+        if mobile and user_queryset.filter(mobile=mobile).exists():
+            raise serializers.ValidationError({'mobile': 'A user with this mobile already exists.'})
+        if email and user_queryset.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({'email': 'A user with this email already exists.'})
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        password = validated_data.pop('password')
+        name = user_data.pop('first_name')
+        user = User(
+            first_name=name,
+            username=user_data.get('mobile'),
+            role=User.Role.DELIVERY_PERSON,
+            profile_complete=False,
+            **user_data,
+        )
+        user.set_password(password)
+        user.save()
+        instance = DeliveryPerson.objects.create(user=user, **validated_data)
+        self._update_profile_complete(instance)
+        return instance
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', {})
+        password = validated_data.pop('password', None)
+        user = instance.user
+        for field, value in user_data.items():
+            setattr(user, field, value)
+        if user.mobile:
+            user.username = user.mobile
+        if password:
+            user.set_password(password)
+        user.save()
+
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+        self._update_profile_complete(instance)
+        return instance
+
+    @staticmethod
+    def _update_profile_complete(instance):
+        user = instance.user
+        complete = all([
+            user.first_name,
+            user.mobile,
+            user.email,
+            instance.vehicle_type,
+            instance.vehicle_number,
+            instance.address,
+        ])
+        if user.profile_complete != bool(complete):
+            user.profile_complete = bool(complete)
+            user.save(update_fields=['profile_complete'])
+
+
+class DeliveryPersonProfileUpdateSerializer(DeliveryPersonSerializer):
+    mobile = serializers.CharField(source='user.mobile', read_only=True)
+
+    class Meta(DeliveryPersonSerializer.Meta):
+        read_only_fields = ['mobile', 'created_at', 'updated_at', 'profile_complete', 'is_active']
+
+    def validate_email(self, value):
+        if User.objects.exclude(pk=self.instance.user_id).filter(email__iexact=value).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', {})
+        user = instance.user
+        for field, value in user_data.items():
+            setattr(user, field, value)
+        user.save()
+
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+        DeliveryPersonAdminSerializer._update_profile_complete(instance)
+        return instance
 
 
 class DeliverySlotSerializer(serializers.ModelSerializer):

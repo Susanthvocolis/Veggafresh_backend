@@ -4,12 +4,11 @@ from rest_framework.routers import DefaultRouter
 from orders.views.analytics import SalesPerMonthView, MostSoldProductOfMonth, LeastSoldProductOfMonth, SalesReportView
 from orders.views.report_export import SalesReportExportView, SecureFileDownloadView
 from orders.views.user_views import MyOrdersView, MyOrderDetailView, ReorderView
-from orders.views.views import AdminOrderViewSet, OrderStatusViewSet, DeliveryPersonViewSet, AdminFilterOrderViewSet, OrderStatusListView
+from orders.views.views import AdminOrderViewSet, OrderStatusViewSet, AdminFilterOrderViewSet, OrderStatusListView
 
 router = DefaultRouter()
   # or customize
 
-router.register('delivery-persons', DeliveryPersonViewSet)
 router.register(r'orders', AdminOrderViewSet, basename='admin-orders')
 router.register(r'orders-filters', AdminFilterOrderViewSet, basename='admin-filter-orders')
 router.register('order-status', OrderStatusViewSet, basename='order-status')

@@ -4,7 +4,9 @@ from django.db import transaction
 from address.serializers import AddressSerializer
 from payments.models import Payment
 from delivery.services import reserve_delivery_slot
-from .models import Order, OrderItem, OrderStatus, DeliveryPerson
+from delivery.models import DeliveryPerson
+from delivery.serializers import DeliveryPersonSerializer
+from .models import Order, OrderItem, OrderStatus
 
 
 class OrderItemCreateSerializer(serializers.ModelSerializer):
@@ -54,12 +56,6 @@ class OrderItemSerializer(serializers.ModelSerializer):
     def get_product_image(self, obj):
         image = obj.product_variant.product.images.first()
         return image.image if image else None
-
-
-class DeliveryPersonSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = DeliveryPerson
-        fields = ['id', 'name', 'mobile']
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -171,6 +167,51 @@ class OrderStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = ['status', 'delivery_person']
+
+    def validate_delivery_person(self, value):
+        if value and not value.can_receive_orders:
+            raise serializers.ValidationError(
+                'Delivery person must be active and have a completed profile.'
+            )
+        return value
+
+    def update(self, instance, validated_data):
+        if validated_data.get('delivery_person') and 'status' not in validated_data:
+            assigned_status, _ = OrderStatus.objects.get_or_create(
+                name='Assign to Delivery Partner'
+            )
+            validated_data['status'] = assigned_status
+        return super().update(instance, validated_data)
+
+
+class DeliveryOrderSerializer(serializers.ModelSerializer):
+    status = serializers.CharField(source='status.name', read_only=True)
+    customer_name = serializers.SerializerMethodField()
+    customer_mobile = serializers.SerializerMethodField()
+    address = AddressSerializer(read_only=True)
+    items = OrderItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'order_id', 'status', 'payment_method', 'delivery_date',
+            'delivery_slot_name', 'slot_start_time', 'slot_end_time',
+            'customer_name', 'customer_mobile', 'address', 'items',
+            'final_amount', 'created_at',
+        ]
+        read_only_fields = fields
+
+    def get_customer_name(self, obj):
+        if obj.address and obj.address.full_name:
+            return obj.address.full_name
+        if obj.user:
+            return obj.user.get_full_name().strip() or obj.user.first_name
+        return None
+
+    def get_customer_mobile(self, obj):
+        if obj.address and obj.address.mobile:
+            return obj.address.mobile
+        return obj.user.mobile if obj.user else None
 
 
 class OrderStatusSerializer(serializers.ModelSerializer):

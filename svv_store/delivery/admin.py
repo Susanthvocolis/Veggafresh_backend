@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import DeliverySchedule, DeliverySlot
+from .models import DeliveryPerson, DeliverySchedule, DeliverySlot
+
+
+@admin.register(DeliveryPerson)
+class DeliveryPersonAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'mobile', 'email', 'vehicle_type', 'vehicle_number', 'status')
+    list_filter = ('status',)
+    search_fields = ('user__first_name', 'user__email', 'user__mobile', 'vehicle_number')
+    list_select_related = ('user',)
 
 
 @admin.register(DeliverySlot)

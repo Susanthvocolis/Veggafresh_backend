@@ -1,7 +1,4 @@
 from django.contrib import admin
-from .models import Order, OrderStatus, OrderItem, DeliveryPerson
-
-from django.contrib import admin
 from .models import Order, OrderStatus, OrderItem
 
 
@@ -66,7 +63,3 @@ class OrderStatusAdmin(admin.ModelAdmin):
     list_display = ('id', 'name',)
     search_fields = ('name',)
 
-@admin.register(DeliveryPerson)
-class DeliveryPersonAdmin(admin.ModelAdmin):
-    list_display = ['id', 'name', 'mobile']
-    search_fields = ['name', 'mobile']

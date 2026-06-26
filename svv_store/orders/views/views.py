@@ -7,10 +7,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import filters
 from orders.filters import OrderFilter
-from orders.models import Order, OrderStatus, DeliveryPerson
+from orders.models import Order, OrderStatus
 from orders.permissions import IsSuperAdminOrHasOrderPermission
 from orders.serializers import OrderSerializer, OrderStatusUpdateSerializer, OrderStatusSerializer, \
-    DeliveryPersonSerializer, AdminOrderSerializer
+    AdminOrderSerializer
 from delivery.services import release_delivery_schedule
 from users.services import send_order_placed_sms, send_out_for_delivery_sms
 from utils.pagination import CustomPageNumberPagination
@@ -201,7 +201,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
                 "Cancelled": "Order has been cancelled. Sorry for the inconvenience.",
                 "Assign to Delivery Partner": "Order assigned to delivery partner.",
                 "Out For Delivery": "Order is out for delivery.",
-                "Delivery Status Update": "Thank you! Order has been marked as delivered."
+                "Delivered": "Thank you! Order has been marked as delivered."
             }
             message = msg_map.get(order.status.name, "Order updated.")
 
@@ -236,7 +236,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
             "Cancelled": "Order has been cancelled. Sorry for the inconvenience.",
             "Assign to Delivery Partner": "Order assigned to delivery partner.",
             "Out For Delivery": "Order is out for delivery.",
-            "Delivery Status Update": "Thank you! Order has been marked as delivered.",
+            "Delivered": "Thank you! Order has been marked as delivered.",
         }
 
         statuses = [
@@ -277,23 +277,13 @@ class OrderStatusViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OrderStatus.objects.all()
     serializer_class = OrderStatusSerializer
 
-class DeliveryPersonViewSet(viewsets.ModelViewSet):
-    queryset = DeliveryPerson.objects.all()
-    serializer_class = DeliveryPersonSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.OrderingFilter, filters.SearchFilter]
-    search_fields = ['name', 'mobile']
-    ordering_fields = ['name', 'mobile']
-    ordering = ['name']
-
-
 # Message shown to customer for each order status
 ORDER_STATUS_MESSAGES = {
     "Accepted": "Order has been accepted.",
     "Cancelled": "Order has been cancelled. Sorry for the inconvenience.",
     "Assign to Delivery Partner": "Order assigned to delivery partner.",
     "Out For Delivery": "Order is out for delivery.",
-    "Delivery Status Update": "Thank you! Order has been marked as delivered.",
+    "Delivered": "Thank you! Order has been delivered.",
 }
 
 

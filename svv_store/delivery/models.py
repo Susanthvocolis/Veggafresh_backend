@@ -1,5 +1,56 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.conf import settings
+
+
+class DeliveryPerson(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Active'
+        INACTIVE = 'INACTIVE', 'Inactive'
+        ON_DUTY = 'ON_DUTY', 'On Duty'
+        OFF_DUTY = 'OFF_DUTY', 'Off Duty'
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='delivery_profile',
+    )
+    vehicle_type = models.CharField(max_length=100, blank=True, null=True)
+    vehicle_number = models.CharField(max_length=50, blank=True, null=True, unique=True)
+    address = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.INACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def name(self):
+        return self.user.get_full_name().strip() or self.user.first_name or self.user.email or self.user.mobile
+
+    @property
+    def mobile(self):
+        return self.user.mobile
+
+    @property
+    def email(self):
+        return self.user.email
+
+    @property
+    def can_receive_orders(self):
+        return (
+            self.user.is_active
+            and self.user.profile_complete
+            and self.status in (self.Status.ACTIVE, self.Status.ON_DUTY)
+        )
+
+    def __str__(self):
+        return f"{self.name} ({self.mobile})"
+
+    class Meta:
+        db_table = 'delivery_person_profile'
+        ordering = ['user__first_name', 'user__mobile']
+        indexes = [
+            models.Index(fields=['status'], name='delivery_person_status_idx'),
+        ]
 
 
 class DeliverySlot(models.Model):
