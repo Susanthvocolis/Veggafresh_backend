@@ -13,18 +13,6 @@ class OrderStatus(models.Model):
         indexes = [
             models.Index(fields=['name'])  # Index on the 'name' field for faster lookups
         ]
-class DeliveryPerson(models.Model):
-    name = models.CharField(max_length=255)
-    mobile = models.CharField(max_length=20,unique=True)
-
-    def __str__(self):
-        return f"{self.name} ({self.mobile})"
-
-    class Meta:
-        db_table = 'delivery_person'
-        indexes = [
-            models.Index(fields=['mobile'])  # Index on the 'mobile' field for fast lookups
-        ]
 class Order(models.Model):
     PAYMENT_METHOD_CHOICES = [
         ('online', 'Online'),
@@ -49,7 +37,7 @@ class Order(models.Model):
     slot_end_time = models.TimeField(null=True, blank=True)
 
     delivery_person = models.ForeignKey(
-        'DeliveryPerson',
+        'delivery.DeliveryPerson',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

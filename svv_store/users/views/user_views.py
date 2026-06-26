@@ -28,6 +28,12 @@ class RequestOTPView(APIView):
             identifier = identifier.strip()
             user, created = User.objects.get_or_create(mobile=identifier)
 
+        if not created and user.role != User.Role.USER:
+            return Response(
+                {'error': 'Use the login endpoint assigned to your account type.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         # Bypass OTP for test numbers — skip SMS and OTP creation
         if identifier_type == 'mobile' and identifier in settings.OTP_BYPASS_MOBILES:
             return Response({
@@ -61,6 +67,11 @@ class VerifyOTPView(APIView):
             # Bypass OTP validation for test numbers — accept any OTP
             if identifier_type == 'mobile' and identifier in settings.OTP_BYPASS_MOBILES:
                 user, _ = User.objects.get_or_create(mobile=identifier)
+                if user.role != User.Role.USER:
+                    return Response(
+                        {'error': 'Use the login endpoint assigned to your account type.'},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
                 if not user.is_mobile_verified:
                     user.is_mobile_verified = True
                     user.save()
@@ -108,6 +119,11 @@ class VerifyOTPView(APIView):
                 user = User.objects.filter(mobile=identifier).first()
                 if not user:
                     user = User.objects.create(mobile=identifier)
+                if user.role != User.Role.USER:
+                    return Response(
+                        {'error': 'Use the login endpoint assigned to your account type.'},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
                 if not user.is_mobile_verified:
                     user.is_mobile_verified = True
                     user.save()

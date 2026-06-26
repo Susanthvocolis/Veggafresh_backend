@@ -15,6 +15,17 @@ class IsSuperAdminOrCanManageDelivery(BasePermission):
                 perms = user.permissions
             except Exception:
                 return False
-            return perms.can_manage_orders
+            return perms.can_manage_orders or perms.can_manage_delivery_status
 
         return False
+
+
+class IsDeliveryPerson(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user
+            and user.is_authenticated
+            and user.role == user.Role.DELIVERY_PERSON
+            and hasattr(user, 'delivery_profile')
+        )

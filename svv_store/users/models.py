@@ -9,6 +9,7 @@ class User(AbstractUser):
     class Role(models.TextChoices):
         SUPER_ADMIN = 'SUPER_ADMIN', _('Super Admin')
         ADMIN = 'ADMIN', _('Admin')
+        DELIVERY_PERSON = 'DELIVERY_PERSON', _('Delivery Person')
         USER = 'USER', _('User')
 
     objects = CustomUserManager()
