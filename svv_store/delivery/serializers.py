@@ -6,6 +6,7 @@ from rest_framework import serializers
 from django.db import transaction
 
 from users.models import User
+from .services import assign_delivery_person_to_order
 from .models import DeliveryPerson, DeliverySchedule, DeliverySlot
 
 
@@ -233,6 +234,21 @@ class DeliveryScheduleGenerateSerializer(serializers.Serializer):
             'existing_count': existing,
             'created_ids': [schedule.id for schedule in created],
         }
+
+
+class AssignDeliverySlotSerializer(serializers.Serializer):
+    order_id = serializers.CharField()
+    delivery_slot_id = serializers.IntegerField()
+    delivery_person_id = serializers.IntegerField()
+    delivery_date = serializers.DateField()
+
+    def create(self, validated_data):
+        return assign_delivery_person_to_order(
+            order_identifier=validated_data['order_id'],
+            delivery_slot_id=validated_data['delivery_slot_id'],
+            delivery_person_id=validated_data['delivery_person_id'],
+            delivery_date=validated_data.get('delivery_date'),
+        )
 
 
 class CustomerDeliverySlotSerializer:

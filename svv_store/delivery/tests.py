@@ -1,8 +1,11 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from address.models import Address
-from delivery.models import DeliveryPerson
+from delivery.models import DeliveryPerson, DeliverySchedule, DeliverySlot
 from orders.models import Order, OrderStatus
 from users.models import User
 
@@ -125,3 +128,49 @@ class DeliveryPersonAPITests(APITestCase):
         self.assertEqual(delivered_response.status_code, status.HTTP_200_OK)
         order.refresh_from_db()
         self.assertEqual(order.status, delivered)
+
+    def test_admin_assigns_delivery_person_with_slot_and_order_id(self):
+        profile = self.create_delivery_person()
+        profile.vehicle_type = 'Bike'
+        profile.vehicle_number = 'TS09AB1234'
+        profile.address = 'Hyderabad'
+        profile.status = DeliveryPerson.Status.ON_DUTY
+        profile.save()
+        profile.user.profile_complete = True
+        profile.user.save(update_fields=['profile_complete'])
+
+        placed = OrderStatus.objects.create(name='Placed')
+        delivery_date = timezone.localdate() + timedelta(days=2)
+        order = Order.objects.create(
+            user=self.customer,
+            address=self.address,
+            status=placed,
+        )
+        slot = DeliverySlot.objects.create(
+            name='Morning',
+            start_time='09:00',
+            end_time='11:00',
+            is_active=True,
+        )
+
+        self.client.force_authenticate(self.super_admin)
+        response = self.client.post(
+            '/api/v1/admin/assign-delivery/',
+            {
+                'order_id': order.order_id,
+                'delivery_slot_id': slot.id,
+                'delivery_person_id': profile.id,
+                'delivery_date': delivery_date.isoformat(),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        order.refresh_from_db()
+        schedule = DeliverySchedule.objects.get(delivery_date=delivery_date, slot=slot)
+        self.assertEqual(order.delivery_person, profile)
+        self.assertEqual(order.delivery_schedule, schedule)
+        self.assertEqual(order.delivery_date, delivery_date)
+        self.assertEqual(order.delivery_slot_name, slot.name)
+        self.assertEqual(schedule.booked_orders, 1)
+        self.assertEqual(order.status.name, 'Assign to Delivery Partner')

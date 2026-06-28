@@ -9,12 +9,13 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from orders.models import Order, OrderStatus
-from orders.serializers import DeliveryOrderSerializer
+from orders.serializers import AdminOrderSerializer, DeliveryOrderSerializer
 from users.models import User
 from users.services import send_out_for_delivery_sms
 from .models import DeliveryPerson, DeliverySchedule, DeliverySlot
 from .permissions import IsDeliveryPerson, IsSuperAdminOrCanManageDelivery
 from .serializers import (
+    AssignDeliverySlotSerializer,
     DeliveryPersonAdminSerializer,
     DeliveryPersonProfileUpdateSerializer,
     DeliveryPersonSerializer,
@@ -174,6 +175,19 @@ class DeliveryScheduleViewSet(viewsets.ModelViewSet):
             "message": "Delivery schedules generated successfully.",
             **result,
         }, status=status.HTTP_201_CREATED)
+
+
+class AdminAssignDeliveryView(APIView):
+    permission_classes = [IsAuthenticated, IsSuperAdminOrCanManageDelivery]
+
+    def post(self, request):
+        serializer = AssignDeliverySlotSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+        return Response({
+            "message": "Delivery person assigned successfully.",
+            "data": AdminOrderSerializer(order).data,
+        }, status=status.HTTP_200_OK)
 
 
 class CustomerDeliverySlotsView(APIView):
