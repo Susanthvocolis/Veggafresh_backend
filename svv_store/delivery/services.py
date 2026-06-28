@@ -1,13 +1,13 @@
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import DeliverySchedule, DeliverySlot
+from .models import DeliveryPerson, DeliverySchedule, DeliverySlot
 
 
 def get_available_delivery_options(days=30):
@@ -163,3 +163,103 @@ def release_delivery_schedule(schedule_id):
     if schedule.booked_orders > 0:
         schedule.booked_orders -= 1
         schedule.save(update_fields=['booked_orders', 'updated_at'])
+
+
+def _get_order_for_assignment(order_identifier):
+    from orders.models import Order
+
+    order_id = str(order_identifier).strip()
+    queryset = Order.objects.select_for_update()
+
+    order = queryset.filter(order_id=order_id).first()
+    if order:
+        return order
+
+    if order_id.isdigit():
+        order = queryset.filter(pk=int(order_id)).first()
+
+    if not order:
+        raise serializers.ValidationError({"order_id": "Order not found."})
+    return order
+
+
+def assign_delivery_person_to_order(order_identifier, delivery_slot_id, delivery_person_id, delivery_date):
+    from orders.models import OrderStatus
+
+    with transaction.atomic():
+        order = _get_order_for_assignment(order_identifier)
+
+        if not delivery_slot_id:
+            raise serializers.ValidationError({"delivery_slot_id": "This field is required."})
+
+        try:
+            delivery_person = DeliveryPerson.objects.select_related('user').get(
+                pk=delivery_person_id
+            )
+        except DeliveryPerson.DoesNotExist:
+            raise serializers.ValidationError({
+                "delivery_person_id": "Delivery person not found."
+            })
+
+        if not delivery_person.can_receive_orders:
+            raise serializers.ValidationError({
+                "delivery_person_id": "Delivery person must be active and have a completed profile."
+            })
+
+        delivery_date = _parse_delivery_date(delivery_date)
+
+        try:
+            slot = DeliverySlot.objects.get(id=delivery_slot_id, is_active=True)
+        except DeliverySlot.DoesNotExist:
+            raise serializers.ValidationError({
+                "delivery_slot_id": "Invalid or inactive delivery slot."
+            })
+
+        schedule = _get_or_create_schedule(slot, delivery_date)
+        previous_schedule_id = order.delivery_schedule_id
+        is_same_schedule = previous_schedule_id == schedule.id
+
+        now = timezone.localtime()
+        if schedule.delivery_date < now.date():
+            raise serializers.ValidationError({"delivery_date": "Delivery date has already passed."})
+        if schedule.delivery_date == now.date() and schedule.slot.start_time <= now.time():
+            raise serializers.ValidationError({"delivery_slot_id": "Delivery slot is no longer available."})
+        if not is_same_schedule and not schedule.is_available:
+            raise serializers.ValidationError({
+                "delivery_slot_id": "Delivery slot is not available for this date."
+            })
+
+        if previous_schedule_id and not is_same_schedule:
+            previous_schedule = DeliverySchedule.objects.select_for_update().get(id=previous_schedule_id)
+            if previous_schedule.booked_orders > 0:
+                previous_schedule.booked_orders -= 1
+                previous_schedule.save(update_fields=['booked_orders', 'updated_at'])
+
+        if not is_same_schedule:
+            schedule.booked_orders += 1
+            schedule.save(update_fields=['booked_orders', 'updated_at'])
+
+        order.delivery_person = delivery_person
+        order.delivery_schedule = schedule
+        order.delivery_date = schedule.delivery_date
+        order.delivery_slot_name = schedule.slot.name
+        order.slot_start_time = schedule.slot.start_time
+        order.slot_end_time = schedule.slot.end_time
+
+        if not order.status or order.status.name not in ("Cancelled", "Failed", "Delivered"):
+            assigned_status, _ = OrderStatus.objects.get_or_create(
+                name='Assign to Delivery Partner'
+            )
+            order.status = assigned_status
+
+        order.save(update_fields=[
+            'delivery_person',
+            'delivery_schedule',
+            'delivery_date',
+            'delivery_slot_name',
+            'slot_start_time',
+            'slot_end_time',
+            'status',
+        ])
+
+    return order

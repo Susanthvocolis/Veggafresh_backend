@@ -4,10 +4,51 @@ from django.db import transaction
 from address.serializers import AddressSerializer
 from payments.models import Payment
 from delivery.services import reserve_delivery_slot
-from delivery.models import DeliveryPerson
+from delivery.models import DeliveryPerson, DeliverySchedule
 from delivery.serializers import DeliveryPersonSerializer
 from .models import Order, OrderItem, OrderStatus
 
+
+class AssignDeliverySerializer(serializers.Serializer):
+    delivery_person = serializers.PrimaryKeyRelatedField(
+        queryset=DeliveryPerson.objects.all(),
+        required=True
+    )
+    delivery_schedule = serializers.PrimaryKeyRelatedField(
+        queryset=DeliverySchedule.objects.all(),
+        required=True
+    )
+
+    def validate_delivery_person(self, value):
+        if not value.can_receive_orders:
+            raise serializers.ValidationError(
+                'Delivery person must be active and have a completed profile.'
+            )
+        return value
+
+    def validate_delivery_schedule(self, value):
+        if not value.is_available:
+            raise serializers.ValidationError(
+                'Delivery schedule is not available. It might be full, inactive, or blocked.'
+            )
+        return value
+
+    def validate(self, attrs):
+        order = self.context.get('order')
+        if not order:
+            # This should not happen if the view provides the context
+            raise serializers.ValidationError("Order context is missing.")
+
+        schedule = attrs.get('delivery_schedule')
+        if order.delivery_date != schedule.delivery_date:
+            raise serializers.ValidationError({
+                'delivery_schedule': f"Schedule date ({schedule.delivery_date}) does not match order delivery date ({order.delivery_date})."
+            })
+        # Check if the order is already assigned
+        if order.delivery_person and order.delivery_schedule:
+            raise serializers.ValidationError("This order has already been assigned for delivery.")
+
+        return attrs
 
 class OrderItemCreateSerializer(serializers.ModelSerializer):
     class Meta:

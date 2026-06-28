@@ -2,18 +2,26 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import filters
+
+from delivery.models import DeliveryPerson, DeliverySchedule
 from orders.filters import OrderFilter
 from orders.models import Order, OrderStatus
 from orders.permissions import IsSuperAdminOrHasOrderPermission
-from orders.serializers import OrderSerializer, OrderStatusUpdateSerializer, OrderStatusSerializer, \
-    AdminOrderSerializer
-from delivery.services import release_delivery_schedule
+from orders.serializers import (
+    OrderSerializer,
+    OrderStatusUpdateSerializer,
+    OrderStatusSerializer,
+    AdminOrderSerializer,
+)
+from delivery.services import assign_delivery_person_to_order, release_delivery_schedule
 from users.services import send_order_placed_sms, send_out_for_delivery_sms
 from utils.pagination import CustomPageNumberPagination
+
 
 class AdminFilterOrderViewSet(viewsets.ModelViewSet):
     queryset = (
@@ -33,6 +41,8 @@ class AdminFilterOrderViewSet(viewsets.ModelViewSet):
     search_fields = ['order_id', 'status__name', 'user__first_name', 'user__last_name', 'user__mobile', 'address__full_name', 'address__mobile']
     ordering_fields = ['created_at']
     ordering = ['-created_at']  # Default: newest orders first
+
+
 class GetAllOrderViewSet(viewsets.ViewSet):
     permission_classes = [IsSuperAdminOrHasOrderPermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -154,6 +164,7 @@ class AdminOrderViewSet(viewsets.ViewSet):
             return Response(serializer.data)
         except Order.DoesNotExist:
             return Response({'message': 'Order not found'}, status=404)
+
     def destroy(self, request, pk=None):
         try:
             with transaction.atomic():
@@ -164,6 +175,56 @@ class AdminOrderViewSet(viewsets.ViewSet):
             return Response({"message": "Order deleted successfully"}, status=204)
         except Order.DoesNotExist:
             return Response({"message": "Order not found"}, status=404)
+
+    @action(detail=True, methods=['post'], url_path='assign-delivery')
+    def assign_delivery(self, request, pk=None):
+        try:
+            order = Order.objects.get(pk=pk)
+        except Order.DoesNotExist:
+            return Response({'message': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        delivery_person_id = request.data.get('delivery_person')
+        delivery_schedule_id = request.data.get('delivery_schedule')
+        if not delivery_person_id or not delivery_schedule_id:
+            return Response({
+                "message": "Failed",
+                "data": {
+                    "delivery_person": "This field is required.",
+                    "delivery_schedule": "This field is required.",
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            delivery_schedule = DeliverySchedule.objects.select_related('slot').get(pk=delivery_schedule_id)
+        except DeliverySchedule.DoesNotExist:
+            return Response({
+                "message": "Failed",
+                "data": {"delivery_schedule": "Invalid delivery schedule."}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            delivery_person = DeliveryPerson.objects.select_related('user').get(pk=delivery_person_id)
+            order = assign_delivery_person_to_order(
+                order_identifier=order.order_id,
+                delivery_slot_id=delivery_schedule.slot_id,
+                delivery_person_id=delivery_person.id,
+                delivery_date=delivery_schedule.delivery_date,
+            )
+        except DeliveryPerson.DoesNotExist:
+            return Response({
+                "message": "Failed",
+                "data": {"delivery_person": "Invalid delivery person."}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except ValidationError as exc:
+            return Response({
+                "message": "Failed",
+                "data": exc.detail,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            "message": "Delivery person assigned successfully.",
+            "data": AdminOrderSerializer(order).data
+        }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='status/(?P<status_name>[^/.]+)')
     def get_by_status(self, request, status_name=None):
@@ -248,6 +309,8 @@ class AdminOrderViewSet(viewsets.ViewSet):
             for s in OrderStatus.objects.all().values("id", "name")
         ]
         return Response({"status_options": statuses})
+
+
 class UserOrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
@@ -272,6 +335,7 @@ class UserOrderViewSet(viewsets.ModelViewSet):
                 )
             except Exception as e:
                 print(f"Order placed SMS failed: {e}")
+
 
 class OrderStatusViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OrderStatus.objects.all()
