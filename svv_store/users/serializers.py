@@ -6,7 +6,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'mobile', 'email', 'role', 'first_name', 'last_name',
-                  'profile_complete', 'date_of_birth', 'address']
+                  'profile_complete', 'date_of_birth', 'address', 'gst_number', 'company_name']
         read_only_fields = ['role', 'profile_complete']
 
 class OTPSerializer(serializers.Serializer):
@@ -16,7 +16,7 @@ class OTPSerializer(serializers.Serializer):
 class ProfileCompletionSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email', 'date_of_birth', 'address']
+        fields = ['first_name', 'last_name', 'email', 'date_of_birth', 'address', 'gst_number', 'company_name']
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -41,7 +41,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     permissions = ModulePermissionSerializer(required=False)
     class Meta:
         model = User
-        fields = ['id', 'first_name', 'last_name', 'email', 'mobile', 'password', 'address', 'role', 'permissions']
+        fields = ['id', 'first_name', 'last_name', 'email', 'mobile', 'password', 'address', 'gst_number', 'company_name', 'role', 'permissions']
         extra_kwargs = {
             'password': {'write_only': True},
         }

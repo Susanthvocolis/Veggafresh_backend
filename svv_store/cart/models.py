@@ -3,7 +3,6 @@ from django.db import models
 from products.models import ProductVariant
 from users.models import User
 from decimal import Decimal
-import os
 
 class Cart(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='cart')
@@ -42,9 +41,9 @@ class Cart(models.Model):
                 )
             )
             subtotal = result['subtotal'] or Decimal('0.00')
-            taxes = subtotal * Decimal(os.getenv("TAX_PERCENT", 0.18))
-            handling = Decimal(os.getenv("HANDLING_CHARGE", 30))
-            delivery = Decimal(os.getenv("DELIVERY_CHARGE", 50))
+            taxes = Decimal('0.00')
+            handling = Decimal('0.00')
+            delivery = Decimal('0.00')
             final = subtotal + taxes + handling + delivery
 
             self.total_amount = subtotal

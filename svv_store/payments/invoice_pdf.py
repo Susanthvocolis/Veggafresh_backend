@@ -73,7 +73,7 @@ def _p(text, style):
     return Paragraph(escape(str(text or "")), style)
 
 
-def _address_lines(address):
+def _address_lines(address, user=None):
     if not address:
         return ["Address not available"]
 
@@ -86,6 +86,10 @@ def _address_lines(address):
         f"{address.city}, {address.state} - {address.pincode}",
         address.country,
     ]
+    if user and user.company_name:
+        lines.append(f"Company Name: {user.company_name}")
+    if user and user.gst_number:
+        lines.append(f"GST Number: {user.gst_number}")
     return [str(line) for line in lines if line]
 
 
@@ -95,6 +99,20 @@ def _payment_reference(payment):
     if payment.payment_gateway == "phonepe":
         return payment.phonepe_transaction_id or "-"
     return payment.payment_id
+
+
+def _charge_rows(order, styles):
+    rows = [[_p("Subtotal", styles["Label"]), _p(_money(order.total_amount), styles["RightValue"])]]
+
+    if Decimal(order.taxes or 0) > 0:
+        rows.append([_p("Taxes", styles["Label"]), _p(_money(order.taxes), styles["RightValue"])])
+    if Decimal(order.handling_charges or 0) > 0:
+        rows.append([_p("Handling Charges", styles["Label"]), _p(_money(order.handling_charges), styles["RightValue"])])
+    if Decimal(order.delivery_charges or 0) > 0:
+        rows.append([_p("Delivery Charges", styles["Label"]), _p(_money(order.delivery_charges), styles["RightValue"])])
+
+    rows.append([Paragraph("<b>Grand Total</b>", styles["Value"]), Paragraph(f"<b>{_money(order.final_amount)}</b>", styles["RightValue"])])
+    return rows
 
 
 def build_invoice_pdf(order, payment):
@@ -162,7 +180,7 @@ def build_invoice_pdf(order, payment):
 
     customer = [
         Paragraph("<b>Bill / Ship To</b>", styles["Value"]),
-        *[_p(line, styles["TableCell"]) for line in _address_lines(order.address)],
+        *[_p(line, styles["TableCell"]) for line in _address_lines(order.address, order.user)],
     ]
     payment_box = [
         Paragraph("<b>Payment Details</b>", styles["Value"]),
@@ -222,13 +240,7 @@ def build_invoice_pdf(order, payment):
     story.append(Spacer(1, 7 * mm))
 
     totals = Table(
-        [
-            [_p("Subtotal", styles["Label"]), _p(_money(order.total_amount), styles["RightValue"])],
-            [_p("Taxes", styles["Label"]), _p(_money(order.taxes), styles["RightValue"])],
-            [_p("Handling Charges", styles["Label"]), _p(_money(order.handling_charges), styles["RightValue"])],
-            [_p("Delivery Charges", styles["Label"]), _p(_money(order.delivery_charges), styles["RightValue"])],
-            [Paragraph("<b>Grand Total</b>", styles["Value"]), Paragraph(f"<b>{_money(order.final_amount)}</b>", styles["RightValue"])],
-        ],
+        _charge_rows(order, styles),
         colWidths=[100 * mm, 57 * mm],
         hAlign="RIGHT",
     )
