@@ -23,6 +23,8 @@ class User(AbstractUser):
     profile_complete = models.BooleanField(default=False)
     date_of_birth = models.DateField(null=True, blank=True)
     address = models.TextField(null=True, blank=True)
+    gst_number = models.CharField(max_length=20, null=True, blank=True)
+    company_name = models.CharField(max_length=255, null=True, blank=True)
 
     USERNAME_FIELD = 'mobile'  # Keep mobile as USERNAME_FIELD for admin compatibility
     REQUIRED_FIELDS = ['username', 'email']

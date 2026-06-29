@@ -25,8 +25,13 @@ class AdminEmployeeLoginView(APIView):
 
         user_data = {
             'id': user.id,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
             'mobile': user.mobile,
             'email': user.email,
+            'address': user.address,
+            'company_name': user.company_name,
+            'gst_number': user.gst_number,
             'role': user.role,
             'is_superadmin': user.role == User.Role.SUPER_ADMIN,
         }

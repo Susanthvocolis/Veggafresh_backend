@@ -10,7 +10,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'first_name', 'last_name', 'email', 'mobile', 'password',
-            'address', 'role', 'permissions'
+            'address', 'gst_number', 'company_name', 'role', 'permissions'
         ]
         extra_kwargs = {
             'password': {'write_only': True},

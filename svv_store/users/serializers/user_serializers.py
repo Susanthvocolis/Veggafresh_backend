@@ -15,7 +15,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'mobile', 'email', 'role', 'first_name', 'last_name',
-                  'profile_complete', 'date_of_birth', 'address']
+                  'profile_complete', 'date_of_birth', 'address', 'gst_number', 'company_name']
         read_only_fields = ['role', 'profile_complete']
 
 
@@ -60,7 +60,7 @@ class VerifyOTPSerializer(serializers.Serializer):
 class ProfileCompletionSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email', 'mobile', 'date_of_birth', 'address']
+        fields = ['first_name', 'last_name', 'email', 'mobile', 'date_of_birth', 'address', 'gst_number', 'company_name']
         extra_kwargs = {
             'mobile': {'read_only': True},  # set at OTP verification, not editable here
         }
