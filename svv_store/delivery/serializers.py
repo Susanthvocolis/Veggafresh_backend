@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from datetime import timedelta
 
+from django.utils.crypto import get_random_string
 from django.utils import timezone
 from rest_framework import serializers
 from django.db import transaction
@@ -28,18 +29,25 @@ class DeliveryPersonSerializer(serializers.ModelSerializer):
 
 
 class DeliveryPersonAdminSerializer(DeliveryPersonSerializer):
+    mobile = serializers.CharField(source='user.mobile', required=False)
+    email = serializers.EmailField(source='user.email', required=False, allow_null=True, allow_blank=True)
+    phone_number = serializers.CharField(write_only=True, required=False)
     password = serializers.CharField(write_only=True, required=False, min_length=8)
+    temporary_password = serializers.CharField(read_only=True)
     is_active = serializers.BooleanField(source='user.is_active', required=False)
 
     class Meta(DeliveryPersonSerializer.Meta):
-        fields = DeliveryPersonSerializer.Meta.fields + ['password']
+        fields = DeliveryPersonSerializer.Meta.fields + ['phone_number', 'password', 'temporary_password']
 
     def validate(self, attrs):
         user_data = attrs.get('user', {})
-        if self.instance is None and not attrs.get('password'):
-            raise serializers.ValidationError({'password': 'Password is required.'})
+        phone_number = self.initial_data.get('phone_number')
+        mobile = user_data.get('mobile') or phone_number
+        if self.instance is None and not mobile:
+            raise serializers.ValidationError({'phone_number': 'This field is required.'})
+        if mobile:
+            user_data['mobile'] = mobile
 
-        mobile = user_data.get('mobile')
         email = user_data.get('email')
         user_queryset = User.objects.all()
         if self.instance:
@@ -53,7 +61,8 @@ class DeliveryPersonAdminSerializer(DeliveryPersonSerializer):
     @transaction.atomic
     def create(self, validated_data):
         user_data = validated_data.pop('user')
-        password = validated_data.pop('password')
+        validated_data.pop('phone_number', None)
+        password = validated_data.pop('password', None) or get_random_string(10)
         name = user_data.pop('first_name')
         user = User(
             first_name=name,
@@ -65,11 +74,13 @@ class DeliveryPersonAdminSerializer(DeliveryPersonSerializer):
         user.set_password(password)
         user.save()
         instance = DeliveryPerson.objects.create(user=user, **validated_data)
+        instance._temporary_password = password
         self._update_profile_complete(instance)
         return instance
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        validated_data.pop('phone_number', None)
         user_data = validated_data.pop('user', {})
         password = validated_data.pop('password', None)
         user = instance.user
@@ -86,6 +97,12 @@ class DeliveryPersonAdminSerializer(DeliveryPersonSerializer):
         instance.save()
         self._update_profile_complete(instance)
         return instance
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if hasattr(instance, '_temporary_password'):
+            data['temporary_password'] = instance._temporary_password
+        return data
 
     @staticmethod
     def _update_profile_complete(instance):

@@ -45,23 +45,24 @@ class DeliveryPersonAPITests(APITestCase):
             '/api/v1/admin/delivery-persons/',
             {
                 'name': 'Ramesh',
-                'mobile': '9000000003',
-                'email': 'ramesh@example.com',
-                'password': 'DriverPass123',
+                'phone_number': '9000000003',
             },
             format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        return DeliveryPerson.objects.select_related('user').get(user__mobile='9000000003')
+        return (
+            DeliveryPerson.objects.select_related('user').get(user__mobile='9000000003'),
+            response.data['temporary_password'],
+        )
 
     def test_admin_creates_delivery_person_account(self):
-        profile = self.create_delivery_person()
+        profile, temporary_password = self.create_delivery_person()
         self.assertEqual(profile.user.role, User.Role.DELIVERY_PERSON)
         self.assertFalse(profile.user.profile_complete)
-        self.assertTrue(profile.user.check_password('DriverPass123'))
+        self.assertTrue(profile.user.check_password(temporary_password))
 
     def test_delivery_person_completes_profile_and_logs_in(self):
-        profile = self.create_delivery_person()
+        profile, temporary_password = self.create_delivery_person()
         self.client.force_authenticate(profile.user)
         response = self.client.patch(
             '/api/v1/delivery/me/',
@@ -82,13 +83,13 @@ class DeliveryPersonAPITests(APITestCase):
         self.client.force_authenticate(user=None)
         login_response = self.client.post(
             '/api/v1/delivery/login/',
-            {'username': '9000000003', 'password': 'DriverPass123'},
+            {'username': '9000000003', 'password': temporary_password},
             format='json',
         )
         self.assertEqual(login_response.status_code, status.HTTP_200_OK)
 
     def test_delivery_person_updates_assigned_order_status(self):
-        profile = self.create_delivery_person()
+        profile, _ = self.create_delivery_person()
         profile.vehicle_type = 'Bike'
         profile.vehicle_number = 'TS09AB1234'
         profile.address = 'Hyderabad'
@@ -130,7 +131,7 @@ class DeliveryPersonAPITests(APITestCase):
         self.assertEqual(order.status, delivered)
 
     def test_admin_assigns_delivery_person_with_slot_and_order_id(self):
-        profile = self.create_delivery_person()
+        profile, _ = self.create_delivery_person()
         profile.vehicle_type = 'Bike'
         profile.vehicle_number = 'TS09AB1234'
         profile.address = 'Hyderabad'

@@ -116,7 +116,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'delivery_schedule_id', 'delivery_date', 'delivery_slot_name',
             'slot_start_time', 'slot_end_time',
             'delivery_person', 'created_at', 'items', 'address', 
-            'total_amount', 'taxes', 'handling_charges', 'delivery_charges', 'final_amount',
+            'total_amount', 'final_amount',
             'payment_status', 'payment_amount'
         ]
 
@@ -174,7 +174,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             'delivery_schedule_id', 'delivery_date', 'delivery_slot_name',
             'slot_start_time', 'slot_end_time',
             'delivery_person', 'created_at', 'items', 'address', 
-            'total_amount', 'taxes', 'handling_charges', 'delivery_charges', 'final_amount',
+            'total_amount', 'final_amount',
             'payment_status', 'payment_amount'
         ]
 

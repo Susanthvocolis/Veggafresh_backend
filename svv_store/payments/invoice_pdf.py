@@ -25,6 +25,10 @@ TEXT = colors.HexColor("#243024")
 MUTED = colors.HexColor("#66736a")
 LINE = colors.HexColor("#dfe7df")
 SOFT_GREEN = colors.HexColor("#eef8ec")
+SELLER_INFO = [
+    "Vegga Fresh",
+    "H No 13-6-448/1, Sai Nagar Colony, Behind Vegetable Market, Guddimalkapur, Hyderabad, 500028",
+]
 
 
 class VeggaFreshLogo(Flowable):
@@ -106,6 +110,8 @@ def _charge_rows(order, styles):
 
     if Decimal(order.taxes or 0) > 0:
         rows.append([_p("Taxes", styles["Label"]), _p(_money(order.taxes), styles["RightValue"])])
+    else:
+        rows.append([_p("GST (Included in item price, 0%)", styles["Label"]), _p(_money(0), styles["RightValue"])])
     if Decimal(order.handling_charges or 0) > 0:
         rows.append([_p("Handling Charges", styles["Label"]), _p(_money(order.handling_charges), styles["RightValue"])])
     if Decimal(order.delivery_charges or 0) > 0:
@@ -182,6 +188,10 @@ def build_invoice_pdf(order, payment):
         Paragraph("<b>Bill / Ship To</b>", styles["Value"]),
         *[_p(line, styles["TableCell"]) for line in _address_lines(order.address, order.user)],
     ]
+    seller = [
+        Paragraph("<b>Seller</b>", styles["Value"]),
+        *[_p(line, styles["TableCell"]) for line in SELLER_INFO],
+    ]
     payment_box = [
         Paragraph("<b>Payment Details</b>", styles["Value"]),
         _p(f"Method: {order.payment_method.upper()}", styles["TableCell"]),
@@ -189,12 +199,13 @@ def build_invoice_pdf(order, payment):
         _p(f"Status: {payment.status}", styles["TableCell"]),
         _p(f"Reference: {_payment_reference(payment)}", styles["TableCell"]),
     ]
-    details = Table([[customer, payment_box]], colWidths=[78 * mm, 79 * mm])
+    details = Table([[customer, seller, payment_box]], colWidths=[52 * mm, 58 * mm, 47 * mm])
     details.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.7, LINE),
         ("INNERGRID", (0, 0), (-1, -1), 0.4, LINE),
         ("BACKGROUND", (0, 0), (0, 0), colors.white),
-        ("BACKGROUND", (1, 0), (1, 0), colors.HexColor("#fff7ef")),
+        ("BACKGROUND", (1, 0), (1, 0), SOFT_GREEN),
+        ("BACKGROUND", (2, 0), (2, 0), colors.HexColor("#fff7ef")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 9),
         ("RIGHTPADDING", (0, 0), (-1, -1), 9),
@@ -255,7 +266,10 @@ def build_invoice_pdf(order, payment):
     ]))
     story.append(totals)
     story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph("Note: GST is already included in the listed item prices. This invoice reflects a separate GST line of 0%.", styles["SmallMuted"]))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("Thank you for shopping with Vegga Fresh.", styles["Value"]))
+    story.append(Paragraph("For support, contact support@veggafresh.com", styles["SmallMuted"]))
     story.append(Paragraph("This is a system generated invoice.", styles["SmallMuted"]))
 
     def footer(canvas, document):
