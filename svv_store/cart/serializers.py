@@ -50,8 +50,5 @@ class CartSerializer(serializers.ModelSerializer):
             'user',
             'items',
             'total_amount',
-            'taxes',
-            'handling_charges',
-            'delivery_charges',
             'final_amount',
         ]
