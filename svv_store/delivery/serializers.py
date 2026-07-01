@@ -68,14 +68,14 @@ class DeliveryPersonAdminSerializer(DeliveryPersonSerializer):
             first_name=name,
             username=user_data.get('mobile'),
             role=User.Role.DELIVERY_PERSON,
-            profile_complete=False,
+            profile_complete=True,
+            is_active=True,
             **user_data,
         )
         user.set_password(password)
         user.save()
-        instance = DeliveryPerson.objects.create(user=user, **validated_data)
+        instance = DeliveryPerson.objects.create(user=user, status=DeliveryPerson.Status.ACTIVE, **validated_data)
         instance._temporary_password = password
-        self._update_profile_complete(instance)
         return instance
 
     @transaction.atomic
