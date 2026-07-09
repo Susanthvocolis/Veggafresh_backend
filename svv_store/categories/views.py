@@ -1,5 +1,4 @@
 from rest_framework import viewsets, status, filters
-from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 
@@ -17,17 +16,6 @@ class CategoryViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'slug']
     filterset_fields = ['is_active']
     ordering = ['name']  # Default alphabetical for categories
-
-    def get_queryset(self):
-        queryset = Category.objects.all()
-        if self.action in ['list', 'retrieve'] and not self.request.user.is_authenticated:
-            queryset = queryset.filter(is_active=True)
-        return queryset
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [AllowAny()]
-        return [permission() for permission in self.permission_classes]
 
     @property
     def pagination_class(self):
@@ -76,17 +64,6 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'slug', 'category__name']
     filterset_fields = ['category', 'is_active']
     ordering = ['name']  # Default alphabetical for subcategories
-
-    def get_queryset(self):
-        queryset = SubCategory.objects.all()
-        if self.action in ['list', 'retrieve'] and not self.request.user.is_authenticated:
-            queryset = queryset.filter(is_active=True)
-        return queryset
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [AllowAny()]
-        return [permission() for permission in self.permission_classes]
 
     @property
     def pagination_class(self):
