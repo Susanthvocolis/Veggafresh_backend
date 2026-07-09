@@ -39,6 +39,11 @@ class BannerViewSet(viewsets.ModelViewSet):
     filterset_fields = ['banner_type', 'is_active']
     ordering = ['position', '-created_at']
 
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        return [permission() for permission in self.permission_classes]
+
     def get_queryset(self):
         qs = Banner.objects.all()
         if self.request.query_params.get('active_only') == 'true':
