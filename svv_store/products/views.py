@@ -6,7 +6,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Q
 from django.http import FileResponse, Http404
-from rest_framework import viewsets, status, filters
+from rest_framework import filters, status, viewsets
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -14,8 +14,32 @@ from rest_framework.views import APIView
 
 from utils.signed_url import verify_signed_token
 from .models import Product, ProductVariant
-from .permissions import IsSuperAdminOrHasProductPermission, ImageViewPermission
+from .permissions import ImageViewPermission, IsSuperAdminOrHasProductPermission
 from .serializers import ProductSerializer, ProductVariantSerializer
+
+PRODUCT_CACHE_TTL = 60 * 5
+PRODUCT_CACHE_VERSION_KEY = "products_api_cache_version"
+
+
+def get_product_cache_version():
+    version = cache.get(PRODUCT_CACHE_VERSION_KEY)
+    if version is None:
+        version = 1
+        cache.set(PRODUCT_CACHE_VERSION_KEY, version, timeout=None)
+    return version
+
+
+def bump_product_cache_version():
+    try:
+        cache.incr(PRODUCT_CACHE_VERSION_KEY)
+    except ValueError:
+        cache.set(PRODUCT_CACHE_VERSION_KEY, 2, timeout=None)
+
+
+def build_product_cache_key(prefix, **parts):
+    version = get_product_cache_version()
+    normalized_parts = [f"{key}:{parts[key]}" for key in sorted(parts)]
+    return f"{prefix}:v{version}:" + "|".join(normalized_parts)
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -46,6 +70,36 @@ class ProductViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
 
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        cache_key = build_product_cache_key(
+            "product_list",
+            page=request.query_params.get('page', ''),
+            page_no=request.query_params.get('page_no', ''),
+            page_size=request.query_params.get('page_size', ''),
+            query_params=request.query_params.urlencode(),
+        )
+        cached_data = cache.get(cache_key)
+        if cached_data is not None:
+            return Response(cached_data)
+
+        response = super().list(request, *args, **kwargs)
+        cache.set(cache_key, response.data, timeout=PRODUCT_CACHE_TTL)
+        return response
+
+    def retrieve(self, request, *args, **kwargs):
+        cache_key = build_product_cache_key(
+            "product_detail",
+            product_id=kwargs.get('pk'),
+            query_params=request.query_params.urlencode(),
+        )
+        cached_data = cache.get(cache_key)
+        if cached_data is not None:
+            return Response(cached_data)
+
+        response = super().retrieve(request, *args, **kwargs)
+        cache.set(cache_key, response.data, timeout=PRODUCT_CACHE_TTL)
+        return response
 
     def create(self, request, *args, **kwargs):
         processed_data = {}
@@ -83,6 +137,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             )
 
         self.perform_create(serializer)
+        bump_product_cache_version()
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -126,10 +181,16 @@ class ProductViewSet(viewsets.ModelViewSet):
             )
 
         self.perform_update(serializer)
+        bump_product_cache_version()
         return Response(serializer.data)
 
     def perform_update(self, serializer):
         serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        response = super().destroy(request, *args, **kwargs)
+        bump_product_cache_version()
+        return response
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -174,21 +235,20 @@ class UserProductAPIView(APIView):
     def get(self, request):
         params = request.query_params
 
-        # Build a param-aware cache key — each unique filter/page combo is cached separately
-        cache_key = (
-            f"products"
-            f"_cat{params.get('category', '')}"
-            f"_sub{params.get('subcategory', '')}"
-            f"_brand{params.get('brand', '')}"
-            f"_q{params.get('search', '')}"
-            f"_active{params.get('is_active', 'true')}"
-            f"_o{params.get('ordering', '-created_at')}"
-            f"_p{params.get('page', 1)}"
-            f"_ps{params.get('page_size', 10)}"
+        cache_key = build_product_cache_key(
+            "user_product_list",
+            category=params.get('category', ''),
+            subcategory=params.get('subcategory', ''),
+            brand=params.get('brand', ''),
+            search=params.get('search', ''),
+            is_active=params.get('is_active', 'true'),
+            ordering=params.get('ordering', '-created_at'),
+            page=params.get('page', 1),
+            page_size=params.get('page_size', 10),
         )
 
         cached_data = cache.get(cache_key)
-        if cached_data:
+        if cached_data is not None:
             return Response(cached_data)
 
         ordering = params.get('ordering', '-created_at')
@@ -234,6 +294,5 @@ class UserProductAPIView(APIView):
         serializer = ProductSerializer(page, many=True, context={'request': request})
         response = paginator.get_paginated_response(serializer.data)
 
-        # Cache the paginated response data (5 minutes)
-        cache.set(cache_key, response.data, timeout=60 * 5)
+        cache.set(cache_key, response.data, timeout=PRODUCT_CACHE_TTL)
         return response
