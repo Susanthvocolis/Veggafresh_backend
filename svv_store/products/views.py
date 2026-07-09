@@ -8,6 +8,7 @@ from django.db.models import Q
 from django.http import FileResponse, Http404
 from rest_framework import viewsets, status, filters
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -25,6 +26,11 @@ class ProductViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'brand', 'slug', 'category__name', 'subcategory__name']
     ordering_fields = ['name', 'brand', 'created_at', 'category__name', 'subcategory__name']
     ordering = ['-created_at']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        return [permission() for permission in self.permission_classes]
 
     def get_queryset(self):
         is_active = self.request.query_params.get('is_active')
@@ -158,6 +164,8 @@ class SecureMediaView(APIView):
 
 
 class UserProductAPIView(APIView):
+    permission_classes = [AllowAny]
+
     class CustomPagination(PageNumberPagination):
         page_size = 10
         page_size_query_param = 'page_size'
