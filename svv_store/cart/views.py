@@ -9,7 +9,6 @@ from .serializers import CartSerializer
 from products.models import ProductVariant
 
 class CartViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
 
     def list(self, request):
         cart, _ = Cart.objects.get_or_create(user=request.user)
