@@ -276,7 +276,10 @@ class InitiateRazorpayPayment(APIView):
             for item in cart.items.all():
                 price_to_save = (
                     item.product_variant.discounted_price
-                    if item.product_variant.discounted_price > 0
+                    if (
+                        item.product_variant.discounted_price is not None
+                        and item.product_variant.discounted_price > 0
+                    )
                     else item.product_variant.price
                 )
                 OrderItem.objects.create(
@@ -420,7 +423,10 @@ class InitiateRazorpayMobilePayment(APIView):
             for item in cart.items.select_related('product_variant').all():
                 price_to_save = (
                     item.product_variant.discounted_price
-                    if item.product_variant.discounted_price > 0
+                    if (
+                        item.product_variant.discounted_price is not None
+                        and item.product_variant.discounted_price > 0
+                    )
                     else item.product_variant.price
                 )
                 OrderItem.objects.create(
