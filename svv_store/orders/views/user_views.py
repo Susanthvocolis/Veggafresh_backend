@@ -8,6 +8,7 @@ from cart.models import Cart, CartItem
 from cart.serializers import CartSerializer
 from orders.models import Order
 from orders.serializers import OrderSerializer
+from orders.services import expire_stale_initiated_orders
 
 
 class MyOrdersView(APIView):
@@ -22,6 +23,8 @@ class MyOrdersView(APIView):
         allowed_orderings = ['created_at', '-created_at']
         if ordering not in allowed_orderings:
             ordering = '-created_at'
+
+        expire_stale_initiated_orders(request.user)
 
         orders = (
             Order.objects
@@ -45,6 +48,7 @@ class MyOrderDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, order_id):
+        expire_stale_initiated_orders(request.user)
         try:
             order = (
                 Order.objects
