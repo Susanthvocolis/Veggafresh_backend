@@ -51,14 +51,16 @@ class ProductSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, required=False)
     category_name = serializers.SerializerMethodField()
     subcategory_name = serializers.SerializerMethodField()
+    last_updated_date = serializers.DateTimeField(source='updated_at', read_only=True)
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug', 'description', 'category', 'subcategory', 'brand',
-            'is_active', 'variants', 'images', 'category_name', 'subcategory_name'
+            'is_active', 'variants', 'images', 'category_name', 'subcategory_name',
+            'last_updated_date'
         ]
-        read_only_fields = ['slug', 'category_name', 'subcategory_name']
+        read_only_fields = ['slug', 'category_name', 'subcategory_name', 'last_updated_date']
         extra_kwargs = {
             'description': {'required': False, 'allow_blank': True},
             'brand': {'required': False, 'allow_blank': True},
