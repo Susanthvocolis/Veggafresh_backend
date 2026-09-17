@@ -28,7 +28,16 @@ SOFT_GREEN = colors.HexColor("#eef8ec")
 SELLER_INFO = [
     "Vegga Fresh",
     "H No 13-6-448/1, Sai Nagar Colony, Behind Vegetable Market, Guddimalkapur, Hyderabad, 500028",
+    "GSTIN: 36DROPP2943D1ZJ",
 ]
+
+RAZORPAY_METHOD_LABELS = {
+    "card": "Card",
+    "upi": "UPI",
+    "netbanking": "Netbanking",
+    "wallet": "Wallet",
+    "emi": "EMI",
+}
 
 
 class VeggaFreshLogo(Flowable):
@@ -97,12 +106,25 @@ def _address_lines(address, user=None):
     return [str(line) for line in lines if line]
 
 
-def _payment_reference(payment):
+def _payment_mode(payment):
+    if payment.payment_gateway == "cod":
+        return "Cash on Delivery"
+
     if payment.payment_gateway == "razorpay":
-        return payment.razorpay_payment_id or payment.razorpay_order_id or "-"
+        method = (payment.razorpay_response or {}).get("method")
+        if method:
+            return RAZORPAY_METHOD_LABELS.get(method, str(method).replace("_", " ").title())
+        return "Razorpay"
+
     if payment.payment_gateway == "phonepe":
-        return payment.phonepe_transaction_id or "-"
-    return payment.payment_id
+        response = payment.phonepe_response or {}
+        instrument = response.get("instrument") if isinstance(response.get("instrument"), dict) else {}
+        method = response.get("paymentMode") or instrument.get("type")
+        if method:
+            return str(method).replace("_", " ").title()
+        return "PhonePe"
+
+    return payment.get_payment_gateway_display() if payment.payment_gateway else "-"
 
 
 def _charge_rows(order, styles):
@@ -195,9 +217,8 @@ def build_invoice_pdf(order, payment):
     payment_box = [
         Paragraph("<b>Payment Details</b>", styles["Value"]),
         _p(f"Method: {order.payment_method.upper()}", styles["TableCell"]),
-        _p(f"Gateway: {payment.payment_gateway.upper()}", styles["TableCell"]),
+        _p(f"Payment Mode: {_payment_mode(payment)}", styles["TableCell"]),
         _p(f"Status: {payment.status}", styles["TableCell"]),
-        _p(f"Reference: {_payment_reference(payment)}", styles["TableCell"]),
     ]
     details = Table([[customer, seller, payment_box]], colWidths=[52 * mm, 58 * mm, 47 * mm])
     details.setStyle(TableStyle([
